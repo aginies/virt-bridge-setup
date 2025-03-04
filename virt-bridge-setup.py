@@ -181,7 +181,7 @@ def main():
         exit(1)
 
     create_bridge(BRIDGE_NAME, interface_name)
-    #bring_bridge_up(BRIDGE_NAME, interface_name)
+    bring_bridge_up(BRIDGE_NAME, interface_name)
 
 if __name__ == "__main__":
     main()
