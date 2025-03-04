@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SUSE.com
+# aginies@suse.com
 """
 script to create a bridge on an interface
 This was previously done by yast2 virtualization

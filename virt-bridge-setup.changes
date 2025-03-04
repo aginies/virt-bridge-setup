@@ -1,4 +1,10 @@
 -------------------------------------------------------------------
+Tue Mar  4 14:28:48 UTC 2025 - Antoine Ginies <aginies@suse.com>
+
+- use bz2 tarball
+- add README.md and Makefile
+
+-------------------------------------------------------------------
 Tue Mar  4 10:09:13 UTC 2025 - Antoine Ginies <aginies@suse.com>
 
 - initial release
