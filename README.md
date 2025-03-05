@@ -7,8 +7,8 @@ This was originally created to replace the automatic "yast2 virtualization" brid
 ## Features
 
 - Checks if NetworkManager is running.
-- Creates a network bridge with the default name "br0".
-- Deletes an existing bridge if the `--force` option is used.
+- Creates a network bridge with the default name `br0`.
+- `--force`` deletes an existing bridge if used.
 - `--interface` options to select the device
 - Activates the bridge and configures the connection to automatically connect.
 
@@ -28,4 +28,4 @@ python virt-bridge-setup.py -i <interface_name> [-f]
 
 ## Licence
 
-GPL
+GPL2

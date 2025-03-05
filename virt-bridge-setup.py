@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-# SUSE.com
+#!/usr/bin/env python
+# SUSE LLC
 # aginies@suse.com
 """
 script to create a bridge on an interface
@@ -17,8 +17,7 @@ def run_command(cmd):
     Launch a system command
     """
     proc = subprocess.Popen(
-        cmd,
-        shell=True,
+        cmd, shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True
