@@ -8,7 +8,7 @@ This was originally created to replace the automatic "yast2 virtualization" brid
 
 - Checks if NetworkManager is running.
 - Creates a network bridge with the default name `br0`.
-- `--force`` deletes an existing bridge if used.
+- `--force` deletes an existing bridge if used.
 - `--interface` options to select the device
 - Activates the bridge and configures the connection to automatically connect.
 
