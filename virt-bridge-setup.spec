@@ -37,7 +37,7 @@ It simplifies the process of creating and managing network bridges for virtualiz
 %build
 
 %install
-make install DESTDIR=%{buildroot}
+%make_install
 
 %files
 %license LICENSE
