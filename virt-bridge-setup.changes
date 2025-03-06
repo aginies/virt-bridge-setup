@@ -1,4 +1,9 @@
 -------------------------------------------------------------------
+Wed Mar  5 11:38:04 UTC 2025 - Antoine Ginies <aginies@suse.com>
+
+- 0.2 version: comsetics fix in doc
+
+-------------------------------------------------------------------
 Tue Mar  4 14:28:48 UTC 2025 - Antoine Ginies <aginies@suse.com>
 
 - use bz2 tarball
