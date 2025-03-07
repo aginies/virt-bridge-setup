@@ -19,13 +19,13 @@ Name:           virt-bridge-setup
 Version:        0.2
 Release:        1%{?dist}
 Summary:        Script to setup virtual bridges
-License:        GPL
+License:        GPL-2.0-or-later
+Group:          System/Management
 URL:            https://github.com/aginies/virt-bridge-setup
 Source0:        %{name}-%{version}.tar.bz2
 BuildArch:      noarch
 Requires:       NetworkManager
-Requires:       make
-Requires:       python3
+BuildRequires:       make
 
 %description
 virt-bridge-setup is a script to automate the setup of virtual bridges using NetworkManager.
@@ -37,15 +37,11 @@ It simplifies the process of creating and managing network bridges for virtualiz
 %build
 
 %install
-rm -rf %{buildroot}
-make install DESTDIR=%{buildroot}
-#mkdir -p %{buildroot}/%{_sbindir}
-#install -m 755 %{name}.py %{buildroot}/%{_sbindir}/%{name}
+%make_install
 
 %files
 %license LICENSE
 %doc README.md
-%attr(0755,root,root) %{_sbindir}
-%{_sbindir}/%{name}
+%attr(0755,root,root) %{_sbindir}/%{name}
 
 %changelog
