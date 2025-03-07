@@ -1,4 +1,4 @@
-#!/usr/bin/pyhon3
+#!/usr/bin/python3
 # SUSE LLC
 # aginies@suse.com
 """
