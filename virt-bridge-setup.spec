@@ -22,7 +22,7 @@ Summary:        Script to setup virtual bridges
 License:        GPL-2.0-or-later
 Group:          System/Management
 URL:            https://github.com/aginies/virt-bridge-setup
-Source0:        %{name}-%{version}.tar.bz2
+Source0:        https://github.com/aginies/virt-bridge-setup/archive/refs/tags/%{version}.tar.gz
 BuildArch:      noarch
 Requires:       NetworkManager
 BuildRequires:       make
