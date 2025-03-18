@@ -53,7 +53,7 @@ def is_networkmanager_running():
     stdout, stderr = run_command(cmd)
     return stdout == "active", stdout + "\n" + stderr
 
-def create_bridge(bridge_interface, interface, master_name):
+def create_bridge(bridge_interface, interface, master_name, type):
     """
     Create a new bridge and on an interface
     """
@@ -63,9 +63,9 @@ def create_bridge(bridge_interface, interface, master_name):
     if stderr:
         logging.error(f"Error adding bridge {bridge_interface}: {stderr}")
         return
-    _, stderr = run_command(f"nmcli connection modify '{master_name}' master {bridge_interface}")
+    _, stderr = run_command(f"nmcli connection add type {type} ifname {interface} con-name {interface}-slave master {MY_BRIDGE}")
     if stderr:
-        logging.error(f"Error modifying master: {stderr}")
+        logging.error(f"Error add type {type} ifname {interface}: {stderr}")
         return
     if stderr == "":
         logging.info(f"Slave interface: {interface}, Bridge Interface {bridge_interface} created")
@@ -95,7 +95,7 @@ def bring_bridge_up(bridge_interface, interface):
     #    logging.error(f"Error modify {MY_BRIDGE} auto method: {stderr}")
     #    return
     run_command(f"nmcli connection modify {bridge_interface} connection.autoconnect yes")
-    _, stderr = run_command(f"nmcli device up {bridge_interface}")
+    _, stderr = run_command(f"nmcli connection up {interface}-slave")
     if not wait_for_ip(bridge_interface):
         logging.error(f"Failed to obtain IP address on {bridge_interface}")
     if stderr:
@@ -108,7 +108,7 @@ def wait_for_ip(interface, timeout=30, interval=5):
     """
     end_time = time.time() + timeout
     while time.time() < end_time:
-        stdout, _ = run_command(f"ip addr show {interface}")
+        stdout, _ = run_command(f"nmcli device show {interface}")
         if re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', stdout):
             logging.info(f"IP address obtained on {interface}: {stdout}")
             return True
@@ -153,7 +153,8 @@ def find_device(connections_by_type, target_types):
     for conn_type, connections in connections_by_type.items():
         if conn_type in target_types:
             print(connections)
-            return connections[0]['DEVICE']
+            if '-' not in connections[0]['DEVICE']:
+                return connections[0]['DEVICE']
     return None
 
 def find_name(connections_by_type, interface):
@@ -164,6 +165,16 @@ def find_name(connections_by_type, interface):
         for conn in connections:
             if conn['DEVICE'] == interface:
                 return connections[0]['NAME']
+    return None
+
+def find_type(connections_by_type, interface):
+    """
+    find type of connection using interface name
+    """
+    for _, connections in connections_by_type.items():
+        for conn in connections:
+            if conn['DEVICE'] == interface:
+                return connections[0]['TYPE']
     return None
 
 def main():
@@ -202,6 +213,7 @@ def main():
     bridge_name = find_name(connections_by_type, bridge_interface)
     master_interface = args.interface or find_device(connections_by_type, ['ethernet']) or \
                       find_device(connections_by_type, ['wireless'])
+    conn_type = find_type(connections_by_type, master_interface)
     conn_name = find_name(connections_by_type, master_interface)
 
     if bridge_interface:
@@ -222,7 +234,7 @@ def main():
         logging.error(f"Interface '{args.interface}' does not exist in the connections.")
         exit(1)
 
-    create_bridge(BRIDGE_INTERFACE, master_interface, conn_name)
+    create_bridge(BRIDGE_INTERFACE, master_interface, conn_name, conn_type)
     bring_bridge_up(BRIDGE_INTERFACE, master_interface)
 
 if __name__ == "__main__":
