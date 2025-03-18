@@ -1,8 +1,9 @@
-# Network Bridge Creation Script
+# Network Bridge Creation Script (virt-bridge-setup)
 
 This script allows you to create a network bridge on a specified interface using `nmcli`.
 It simplifies the process of creating and managing network bridges for virtualization environments.
 This was originally created to replace the automatic "yast2 virtualization" bridge creation.
+Support IPV4 only.
 
 ## Features
 
@@ -19,6 +20,11 @@ This was originally created to replace the automatic "yast2 virtualization" brid
 - Subprocess module (included in Python standard library)
 
 ## Installation
+
+Clone the repository:
+```bash
+git clone https://github.com/aginies/virt-bridge-setup.git
+```
 
 ## Usage
 
