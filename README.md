@@ -7,11 +7,12 @@ Support IPV4 only.
 
 ## Features
 
-- Checks if NetworkManager is running.
-- Creates a network bridge with the default name `br0`.
-- `--force` deletes an existing bridge if used.
-- `--interface` options to select the device
-- Activates the bridge and configures the connection to automatically connect.
+- Checks if NetworkManager is running
+- Creates a network bridge with the default name `br0`
+- `-f` `--force`: deletes an existing bridge if used
+- `-i` `--interface`: options to select the device
+- `-d` `--debug`: show debug info
+- Activates the bridge and configures the connection to automatically connect
 
 ## Prerequisites
 
@@ -29,7 +30,7 @@ git clone https://github.com/aginies/virt-bridge-setup.git
 ## Usage
 
 ```sh
-python virt-bridge-setup.py -i <interface_name> [-f]
+python virt-bridge-setup.py -i <interface_name> [-f] [-d]
 ```
 
 ## Licence
