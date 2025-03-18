@@ -18,7 +18,7 @@ clean:
 	rm -rf *~
 
 copy:
-	cp -avf $(PACKAGE)-$(VERSION).tar.bz2 $(NAME).changes $(NAME).spec $(OSCDIR)
+	cp -avf $(NAME).changes $(NAME).spec $(OSCDIR)
 
 version: 
 	@echo $(VERSION)
