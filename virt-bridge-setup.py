@@ -53,7 +53,7 @@ def is_networkmanager_running():
     stdout, stderr = run_command(cmd)
     return stdout == "active", stdout + "\n" + stderr
 
-def create_bridge(bridge_interface, interface, master_name, type):
+def create_bridge(bridge_interface, interface, mac_address, conn_type, simple):
     """
     Create a new bridge and on an interface
     """
@@ -63,9 +63,17 @@ def create_bridge(bridge_interface, interface, master_name, type):
     if stderr:
         logging.error(f"Error adding bridge {bridge_interface}: {stderr}")
         return
-    _, stderr = run_command(f"nmcli connection add type {type} ifname {interface} con-name {interface}-slave master {MY_BRIDGE}")
+    if simple is True:
+        _, stderr = run_command(f"nmcli connection modify {interface} master {bridge_interface}")
+    else:
+        # work around a strange behavior of NetworkManager in SLE16 and TW
+        _, stderr = run_command(f"nmcli connection add type {conn_type} ifname {interface} con-name {interface}-slave master {MY_BRIDGE}")
     if stderr:
-        logging.error(f"Error add type {type} ifname {interface}: {stderr}")
+        logging.error(f"Error add type {conn_type} ifname {interface}: {stderr}")
+        return
+    _, stderr = run_command(f"(nmcli connection modify {bridge_interface} bridge.mac-address {mac_address}")
+    if stderr == "":
+        logging.error(f"Error modify connection with MAC address: {mac_address}: {stderr}")
         return
     if stderr == "":
         logging.info(f"Slave interface: {interface}, Bridge Interface {bridge_interface} created")
@@ -167,6 +175,23 @@ def find_name(connections_by_type, interface):
                 return connections[0]['NAME']
     return None
 
+def find_mac(interface):
+    """
+    find the MAC address of the device
+    """
+    out, stderr = run_command(f"nmcli device show {interface} | grep GENERAL.HWADDR")
+    if stderr:
+        logging.error(f"Error finding MAC of {interface}: {stderr}")
+        return None  # Return None if there's an error
+    else:
+        parts = out.split(':')
+        if len(parts) == 2 and parts[0].strip() == "GENERAL.HWADDR":
+            mac_address = parts[1].strip()
+            return mac_address
+        else:
+            logging.error(f"Unexpected output format when getting MAC address for {interface}: {out}")
+            return None
+
 def find_type(connections_by_type, interface):
     """
     find type of connection using interface name
@@ -176,7 +201,6 @@ def find_type(connections_by_type, interface):
             if conn['DEVICE'] == interface:
                 return connections[0]['TYPE']
     return None
-
 def main():
     """
     main programm
@@ -186,6 +210,7 @@ def main():
             will pickup the first wireless one.")
     parser.add_argument('-i', '--interface', type=str, help='Specify the slave interface name')
     parser.add_argument('-f', '--force', action='store_true', help='Force deleting previous bridge')
+    parser.add_argument('-c', '--complex', action='store_true', help='Force creating another interface as master')
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode to show all commands executed')
     args = parser.parse_args()
 
@@ -194,6 +219,11 @@ def main():
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
     else:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    if args.complex:
+        simple = False
+    else:
+        simple = True
 
     status, output = is_networkmanager_running()
     if status:
@@ -215,6 +245,14 @@ def main():
                       find_device(connections_by_type, ['wireless'])
     conn_type = find_type(connections_by_type, master_interface)
     conn_name = find_name(connections_by_type, master_interface)
+    mac_address = find_mac(master_interface)
+    logging.debug(f"bridge_interface: {bridge_interface} \
+                  bridge_name: {bridge_name} \
+                  master_interface: {master_interface} \
+                  conn_type: {conn_type} \
+                  #conn_name: {conn_name} \
+                  mac_address: {mac_address} \
+                  ")
 
     if bridge_interface:
         if args.force:
@@ -234,7 +272,7 @@ def main():
         logging.error(f"Interface '{args.interface}' does not exist in the connections.")
         exit(1)
 
-    create_bridge(BRIDGE_INTERFACE, master_interface, conn_name, conn_type)
+    create_bridge(BRIDGE_INTERFACE, master_interface, mac_address, conn_type, simple)
     bring_bridge_up(BRIDGE_INTERFACE, master_interface)
 
 if __name__ == "__main__":

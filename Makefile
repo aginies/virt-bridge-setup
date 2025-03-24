@@ -12,7 +12,7 @@ PACKAGE=$(NAME)
 FILES=LICENSE Makefile README.md virt-bridge-setup.py
 VERSION=$(shell grep -m 1 '^Version:' $(NAME).spec | awk '{print $$2}')
 
-all: 	cleandist clean tar
+all: 	cleandist clean
 
 clean: 	
 	rm -rf *~
