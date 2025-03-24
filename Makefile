@@ -6,7 +6,7 @@
 NAME=virt-bridge-setup
 PREFIX=/usr
 SBINDIR=$(PREFIX)/sbin
-ETCSYSNETDIR=$(PREFIX)/etc/systemd/network
+ETCSYSNETDIR=/etc/systemd/network
 OSCDIR=/home/aginies/aginies_obs/Virtualization/$(NAME)
 
 PACKAGE=$(NAME)
