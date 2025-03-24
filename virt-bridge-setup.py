@@ -53,7 +53,7 @@ def is_networkmanager_running():
     stdout, stderr = run_command(cmd)
     return stdout == "active", stdout + "\n" + stderr
 
-def create_bridge(bridge_interface, interface, mac_address, conn_type, simple):
+def create_bridge(bridge_interface, interface, conn_name, conn_type, simple):
     """
     Create a new bridge and on an interface
     """
@@ -64,21 +64,28 @@ def create_bridge(bridge_interface, interface, mac_address, conn_type, simple):
         logging.error(f"Error adding bridge {bridge_interface}: {stderr}")
         return
     if simple is True:
-        _, stderr = run_command(f"nmcli connection modify {interface} master {bridge_interface}")
+        _, stderr = run_command(f"nmcli connection modify '{conn_name}' master {bridge_interface}")
     else:
         # work around a strange behavior of NetworkManager in SLE16 and TW
-        _, stderr = run_command(f"nmcli connection add type {conn_type} ifname {interface} con-name {interface}-slave master {MY_BRIDGE}")
+        _, stderr = run_command(f"nmcli connection add type {conn_type} ifname \
+                {interface} con-name {interface}-slave master {MY_BRIDGE}")
     if stderr:
         logging.error(f"Error add type {conn_type} ifname {interface}: {stderr}")
-        return
-    _, stderr = run_command(f"(nmcli connection modify {bridge_interface} bridge.mac-address {mac_address}")
-    if stderr == "":
-        logging.error(f"Error modify connection with MAC address: {mac_address}: {stderr}")
         return
     if stderr == "":
         logging.info(f"Slave interface: {interface}, Bridge Interface {bridge_interface} created")
 
-def delete_bridge(bridge_interface, bridge_name):
+
+def force_mac_address(bridge_name, mac_address):
+    """
+    force using mac address from slave interface
+    """
+    _, stderr = run_command(f"nmcli connection modify {bridge_name} bridge.mac-address {mac_address}")
+    if stderr == "":
+        logging.error(f"Error modify connection with MAC address: {mac_address}: {stderr}")
+        return
+
+def delete_bridge(bridge_interface, bridge_name, interface):
     """
     delete bridge_name
     need --force
@@ -88,12 +95,13 @@ def delete_bridge(bridge_interface, bridge_name):
     if stderr:
         logging.error(f"Error deleting bridge {bridge_interface}: {stderr}")
         return
-    _, stderr = run_command(f"nmcli connection delete {bridge_name}")
-    if stderr:
-        logging.error(f"Error deleting id {bridge_name}: {stderr}")
-        return
+    for name in [bridge_name, interface]:
+        _, stderr = run_command(f"nmcli connection delete {name}")
+        if stderr:
+            logging.error(f"Error deleting id {name}: {stderr}")
+            return
 
-def bring_bridge_up(bridge_interface, interface):
+def bring_bridge_up(bridge_interface, interface, simple):
     """
     Bring the bridge up and set it to autoconnect
     """
@@ -103,12 +111,18 @@ def bring_bridge_up(bridge_interface, interface):
     #    logging.error(f"Error modify {MY_BRIDGE} auto method: {stderr}")
     #    return
     run_command(f"nmcli connection modify {bridge_interface} connection.autoconnect yes")
-    _, stderr = run_command(f"nmcli connection up {interface}-slave")
-    if not wait_for_ip(bridge_interface):
-        logging.error(f"Failed to obtain IP address on {bridge_interface}")
-    if stderr:
-        logging.error(f"Error bringing up {bridge_interface}: {stderr}")
-        return
+    if simple is False:
+        _, stderr = run_command(f"nmcli connection up {interface}-slave")
+        if not wait_for_ip(bridge_interface):
+            logging.error(f"Failed to obtain IP address on {bridge_interface}")
+        if stderr:
+            logging.error(f"Error bringing up {bridge_interface}: {stderr}")
+            return
+    else:
+        _, stderr = run_command(f"nmcli connection up {MY_BRIDGE}")
+        if stderr:
+            logging.error(f"Error bringing up {MY_BRIDGE}: {stderr}")
+            return
 
 def wait_for_ip(interface, timeout=30, interval=5):
     """
@@ -179,18 +193,13 @@ def find_mac(interface):
     """
     find the MAC address of the device
     """
-    out, stderr = run_command(f"nmcli device show {interface} | grep GENERAL.HWADDR")
+    out, stderr = run_command(f"nmcli -g GENERAL.HWADDR device show {interface}")
     if stderr:
         logging.error(f"Error finding MAC of {interface}: {stderr}")
         return None  # Return None if there's an error
     else:
-        parts = out.split(':')
-        if len(parts) == 2 and parts[0].strip() == "GENERAL.HWADDR":
-            mac_address = parts[1].strip()
-            return mac_address
-        else:
-            logging.error(f"Unexpected output format when getting MAC address for {interface}: {out}")
-            return None
+        mac_address = out.replace("\\", "")
+        return mac_address
 
 def find_type(connections_by_type, interface):
     """
@@ -210,7 +219,9 @@ def main():
             will pickup the first wireless one.")
     parser.add_argument('-i', '--interface', type=str, help='Specify the slave interface name')
     parser.add_argument('-f', '--force', action='store_true', help='Force deleting previous bridge')
-    parser.add_argument('-c', '--complex', action='store_true', help='Force creating another interface as master')
+    parser.add_argument('-s', '--simple', action='store_true', help='Simple way of creating the bridge')
+    parser.add_argument('-m', '--mac', action='store_true', help='Force using MAC address from slave interface')
+    parser.add_argument('-n', '--norun', action='store_true', help='Dry run')
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode to show all commands executed')
     args = parser.parse_args()
 
@@ -220,10 +231,10 @@ def main():
     else:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    if args.complex:
-        simple = False
-    else:
+    if args.simple:
         simple = True
+    else:
+        simple = False
 
     status, output = is_networkmanager_running()
     if status:
@@ -246,17 +257,17 @@ def main():
     conn_type = find_type(connections_by_type, master_interface)
     conn_name = find_name(connections_by_type, master_interface)
     mac_address = find_mac(master_interface)
-    logging.debug(f"bridge_interface: {bridge_interface} \
-                  bridge_name: {bridge_name} \
-                  master_interface: {master_interface} \
-                  conn_type: {conn_type} \
-                  #conn_name: {conn_name} \
-                  mac_address: {mac_address} \
+    logging.debug(f"bridge_interface: {bridge_interface}\n \
+                  bridge_name: {bridge_name}\n \
+                  master_interface: {master_interface}\n \
+                  conn_type: {conn_type}\n \
+                  conn_name: {conn_name}\n \
+                  mac_address: {mac_address}\n \
                   ")
 
     if bridge_interface:
         if args.force:
-            delete_bridge(bridge_interface, bridge_name)
+            delete_bridge(bridge_interface, bridge_name, master_interface+"-slave")
         else:
             logging.warning(f"Bridge {bridge_interface} already existing!")
             logging.info("You have 2 options:")
@@ -272,8 +283,14 @@ def main():
         logging.error(f"Interface '{args.interface}' does not exist in the connections.")
         exit(1)
 
-    create_bridge(BRIDGE_INTERFACE, master_interface, mac_address, conn_type, simple)
-    bring_bridge_up(BRIDGE_INTERFACE, master_interface)
+    if not args.norun:
+        create_bridge(BRIDGE_INTERFACE, master_interface, conn_name, conn_type, simple)
+        if args.mac:
+            if simple is False:
+                force_mac_address(bridge_name, mac_address)
+            else:
+                logging.info("Can't force MAC address in simple mode")
+        bring_bridge_up(BRIDGE_INTERFACE, master_interface, simple)
 
 if __name__ == "__main__":
     main()

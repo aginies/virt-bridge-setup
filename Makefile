@@ -9,7 +9,7 @@ SBINDIR=$(PREFIX)/sbin
 OSCDIR=/home/aginies/aginies_obs/Virtualization/$(NAME)
 
 PACKAGE=$(NAME)
-FILES=LICENSE Makefile README.md virt-bridge-setup.py
+FILES=LICENSE Makefile README.md virt-bridge-setup.py 98-default-bridge.link
 VERSION=$(shell grep -m 1 '^Version:' $(NAME).spec | awk '{print $$2}')
 
 all: 	cleandist clean
@@ -26,6 +26,7 @@ version:
 install: 
 	mkdir -p $(DESTDIR)$(SBINDIR)
 	cp -av $(NAME).py $(DESTDIR)$(SBINDIR)/$(NAME)
+	cp -av 98-default-bridge.link $(DESTDIR)/etc/systemd/network/
 
 cleandist:
 	rm -rf $(PACKAGE)-$(VERSION) $(PACKAGE)-$(VERSION).tar.bz2

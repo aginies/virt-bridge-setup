@@ -11,7 +11,9 @@ Support IPV4 only.
 - Creates a network bridge with the default name `br0`
 - `-f` `--force`: deletes an existing bridge if used
 - `-i` `--interface`: options to select the device
-- `-c` `--complex`: Force creating another interface as master
+- `-s` `--simple`: Simple way to create the bridge
+- `-n` `--norun`: Dry run
+- `-m` `--mac`: Force using MAC address from the slave interface
 - `-d` `--debug`: show debug info
 - Activates the bridge and configures the connection to automatically connect
 
@@ -31,7 +33,7 @@ git clone https://github.com/aginies/virt-bridge-setup.git
 ## Usage
 
 ```sh
-python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-c]
+python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s]
 ```
 
 ## Licence
