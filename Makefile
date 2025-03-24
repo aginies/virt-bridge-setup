@@ -6,6 +6,7 @@
 NAME=virt-bridge-setup
 PREFIX=/usr
 SBINDIR=$(PREFIX)/sbin
+ETCSYSNETDIR=$(PREFIX)/etc/systemd/network
 OSCDIR=/home/aginies/aginies_obs/Virtualization/$(NAME)
 
 PACKAGE=$(NAME)
@@ -25,8 +26,9 @@ version:
 
 install: 
 	mkdir -p $(DESTDIR)$(SBINDIR)
+	mkdir -p $(DESTDIR)$(ETCSYSNETDIR)
 	cp -av $(NAME).py $(DESTDIR)$(SBINDIR)/$(NAME)
-	cp -av 98-default-bridge.link $(DESTDIR)/etc/systemd/network/
+	cp -av 98-default-bridge.link $(DESTDIR)/$(ETCSYSNETDIR)
 
 cleandist:
 	rm -rf $(PACKAGE)-$(VERSION) $(PACKAGE)-$(VERSION).tar.bz2

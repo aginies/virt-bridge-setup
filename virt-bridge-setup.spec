@@ -43,5 +43,6 @@ It simplifies the process of creating and managing network bridges for virtualiz
 %license LICENSE
 %doc README.md
 %attr(0755,root,root) %{_sbindir}/%{name}
+%attr(0644,root,root) %{_sysconfdir}/systemd/network/98-default-bridge.link
 
 %changelog
