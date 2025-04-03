@@ -67,8 +67,7 @@ def create_bridge(bridge_interface, interface, conn_name, conn_type, simple):
         _, stderr = run_command(f"nmcli connection modify '{conn_name}' master {bridge_interface}")
     else:
         # work around a strange behavior of NetworkManager in SLE16 and TW
-        _, stderr = run_command(f"nmcli connection add type {conn_type} ifname \
-                {interface} con-name {interface}-slave master {MY_BRIDGE}")
+        _, stderr = run_command(f"nmcli connection add type {conn_type} ifname {interface} con-name {interface}-slave master {MY_BRIDGE}")
     if stderr:
         logging.error(f"Error add type {conn_type} ifname {interface}: {stderr}")
         return
@@ -81,7 +80,7 @@ def force_mac_address(bridge_name, mac_address):
     force using mac address from slave interface
     """
     _, stderr = run_command(f"nmcli connection modify {bridge_name} bridge.mac-address {mac_address}")
-    if stderr == "":
+    if stderr:
         logging.error(f"Error modify connection with MAC address: {mac_address}: {stderr}")
         return
 
@@ -90,7 +89,7 @@ def set_stp(bridge_name, stp_option):
     STP yes or no
     """
     _, stderr = run_command(f"nmcli connection modify {bridge_name} bridge.stp {stp_option}")
-    if stderr == "":
+    if stderr:
         logging.error(f"Error modify {bridge_name} bridge.stp {stp_option}: {stderr}")
         return
 
@@ -99,7 +98,7 @@ def set_fdelay(bridge_name, fdelay):
     forward delay option
     """
     _, stderr = run_command(f"nmcli connection modify {bridge_name} bridge.forward-delay {fdelay}")
-    if stderr == "":
+    if stderr:
         logging.error(f"Error modify {bridge_name} bridge.forward-delay {fdelay}: {stderr}")
         return
 
@@ -307,16 +306,16 @@ def main():
         create_bridge(BRIDGE_INTERFACE, master_interface, conn_name, conn_type, simple)
         if args.mac:
             if simple is False:
-                force_mac_address(bridge_name, mac_address)
+                force_mac_address(MY_BRIDGE, mac_address)
             else:
                 logging.info("Can't force MAC address in simple mode")
         if args.stp:
             if args.stp.lower() not in ['yes', 'no']:
                 logging.error(f"{args.stp} is not yes or no")
                 exit(1)
-            set_stp(bridge_name, args.stp.lower())
+            set_stp(MY_BRIDGE, args.stp.lower())
         if args.fdelay:
-            set_fdelay(bridge_name, args.fdelay)
+            set_fdelay(MY_BRIDGE, args.fdelay)
         bring_bridge_up(BRIDGE_INTERFACE, master_interface, simple)
 
 if __name__ == "__main__":
