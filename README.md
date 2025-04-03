@@ -3,7 +3,8 @@
 This script allows you to create a network bridge on a specified interface using `nmcli`.
 It simplifies the process of creating and managing network bridges for virtualization environments.
 This was originally created to replace the automatic "yast2 virtualization" bridge creation.
-Support IPV4 only.
+Support IPV4 only. This is a simple script which doesnt aim to support all network scenarios. For
+complex task please setup the bridge manually.
 
 ## Features
 
@@ -12,6 +13,8 @@ Support IPV4 only.
 - `-f` `--force`: deletes an existing bridge if used
 - `-i` `--interface`: options to select the device
 - `-s` `--simple`: Simple way to create the bridge
+- `--fdelay`: forward-delay option
+- `--stp`: Set Spanning Tree to yes or no
 - `-n` `--norun`: Dry run
 - `-m` `--mac`: Force using MAC address from the slave interface
 - `-d` `--debug`: show debug info
@@ -33,7 +36,7 @@ git clone https://github.com/aginies/virt-bridge-setup.git
 ## Usage
 
 ```sh
-python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s]
+python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s] [--fdelay] SECONDS [--stp] (yes|no)
 ```
 
 ## Licence

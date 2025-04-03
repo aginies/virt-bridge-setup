@@ -85,6 +85,24 @@ def force_mac_address(bridge_name, mac_address):
         logging.error(f"Error modify connection with MAC address: {mac_address}: {stderr}")
         return
 
+def set_stp(bridge_name, stp_option):
+    """
+    STP yes or no
+    """
+    _, stderr = run_command(f"nmcli connection modify {bridge_name} bridge.stp {stp_option}")
+    if stderr == "":
+        logging.error(f"Error modify {bridge_name} bridge.stp {stp_option}: {stderr}")
+        return
+
+def set_fdelay(bridge_name, fdelay):
+    """
+    forward delay option
+    """
+    _, stderr = run_command(f"nmcli connection modify {bridge_name} bridge.forward-delay {fdelay}")
+    if stderr == "":
+        logging.error(f"Error modify {bridge_name} bridge.forward-delay {fdelay}: {stderr}")
+        return
+
 def delete_bridge(bridge_interface, bridge_name, interface):
     """
     delete bridge_name
@@ -221,6 +239,8 @@ def main():
     parser.add_argument('-f', '--force', action='store_true', help='Force deleting previous bridge')
     parser.add_argument('-s', '--simple', action='store_true', help='Simple way of creating the bridge')
     parser.add_argument('-m', '--mac', action='store_true', help='Force using MAC address from slave interface')
+    parser.add_argument('--stp', type=str, help='Set STP to yes or no')
+    parser.add_argument('--fdelay', type=int, help='Set forward-delay option (in second)')
     parser.add_argument('-n', '--norun', action='store_true', help='Dry run')
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode to show all commands executed')
     args = parser.parse_args()
@@ -290,6 +310,13 @@ def main():
                 force_mac_address(bridge_name, mac_address)
             else:
                 logging.info("Can't force MAC address in simple mode")
+        if args.stp:
+            if args.stp.lower() not in ['yes', 'no']:
+                logging.error(f"{args.stp} is not yes or no")
+                exit(1)
+            set_stp(bridge_name, args.stp.lower())
+        if args.fdelay:
+            set_fdelay(bridge_name, args.fdelay)
         bring_bridge_up(BRIDGE_INTERFACE, master_interface, simple)
 
 if __name__ == "__main__":
