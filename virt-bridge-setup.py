@@ -123,6 +123,7 @@ def bring_bridge_up(bridge_interface, interface, simple, timeout):
     Bring the bridge up and set it to autoconnect
     """
     logging.info(f"Bringing the bridge {bridge_interface} up, this can take some times...")
+    logging.debug(f"Timeout ise set to: {timeout}")
     #_, stderr = run_command(f"nmcli connection modify {MY_BRIDGE} ipv4.method auto")
     #if stderr:
     #    logging.error(f"Error modify {MY_BRIDGE} auto method: {stderr}")
