@@ -37,7 +37,7 @@ git clone https://github.com/aginies/virt-bridge-setup.git
 ## Usage
 
 ```sh
-python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s] [--fdelay] SECONDS [--stp] (yes|no)
+python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s] [-t] SECONDS [-m] MAC [--fdelay] SECONDS [--stp] (yes|no)
 ```
 
 ## Licence
