@@ -13,6 +13,7 @@ complex task please setup the bridge manually.
 - `-f` `--force`: deletes an existing bridge if used
 - `-i` `--interface`: options to select the device
 - `-s` `--simple`: Simple way to create the bridge
+- `-t` `--timeout`: set timeout to get an IP address
 - `--fdelay`: forward-delay option
 - `--stp`: Set Spanning Tree to yes or no
 - `-n` `--norun`: Dry run
