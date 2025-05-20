@@ -13,7 +13,6 @@ complex task please setup the bridge manually.
 - `-f` `--force`: deletes an existing bridge if used
 - `-i` `--interface`: options to select the device
 - `-s` `--simple`: Simple way to create the bridge
-- `-t` `--timeout`: set timeout to get an IP address
 - `--fdelay`: forward-delay option
 - `--stp`: Set Spanning Tree to yes or no
 - `-n` `--norun`: Dry run
@@ -37,7 +36,7 @@ git clone https://github.com/aginies/virt-bridge-setup.git
 ## Usage
 
 ```sh
-python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s] [-t] SECONDS [-m] MAC [--fdelay] SECONDS [--stp] (yes|no)
+python virt-bridge-setup.py -i <interface_name> [-f] [-d] [-s] [-m] MAC [--fdelay] SECONDS [--stp] (yes|no)
 ```
 
 ## Licence

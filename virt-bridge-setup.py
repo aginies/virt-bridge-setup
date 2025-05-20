@@ -118,12 +118,11 @@ def delete_bridge(bridge_interface, bridge_name, interface):
             logging.error(f"Error deleting id {name}: {stderr}")
             return
 
-def bring_bridge_up(bridge_interface, interface, simple, timeout):
+def bring_bridge_up(bridge_interface, interface, simple):
     """
     Bring the bridge up and set it to autoconnect
     """
     logging.info(f"Bringing the bridge {bridge_interface} up, this can take some times...")
-    logging.debug(f"Timeout ise set to: {timeout}")
     #_, stderr = run_command(f"nmcli connection modify {MY_BRIDGE} ipv4.method auto")
     #if stderr:
     #    logging.error(f"Error modify {MY_BRIDGE} auto method: {stderr}")
@@ -131,8 +130,6 @@ def bring_bridge_up(bridge_interface, interface, simple, timeout):
     run_command(f"nmcli connection modify {MY_BRIDGE} connection.autoconnect yes")
     if simple is False:
         _, stderr = run_command(f"nmcli connection up {interface}-slave")
-        if not wait_for_ip(bridge_interface, timeout):
-            logging.error(f"Failed to obtain IP address on {bridge_interface}")
         if stderr:
             logging.error(f"Error bringing up {bridge_interface}: {stderr}")
             return
@@ -142,18 +139,6 @@ def bring_bridge_up(bridge_interface, interface, simple, timeout):
             logging.error(f"Error bringing up {MY_BRIDGE}: {stderr}")
             return
 
-def wait_for_ip(interface, timeout, interval=2):
-    """
-    Wait for the interface to get an IP address
-    """
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        stdout, _ = run_command(f"nmcli device show {interface}")
-        if re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', stdout):
-            logging.info(f"IP address obtained on {interface}: {stdout}")
-            return True
-        time.sleep(interval)
-    return False
 
 def get_nmcli_connection_info():
     """
@@ -241,7 +226,6 @@ def main():
     parser.add_argument('-m', '--mac', action='store_true', help='Force using MAC address from slave interface')
     parser.add_argument('--stp', type=str, help='Set STP to yes or no')
     parser.add_argument('--fdelay', type=int, help='Set forward-delay option (in second)')
-    parser.add_argument('-t', '--timeout', type=int, help='Set timeout to get IP (default is 15 seconds)')
     parser.add_argument('-n', '--norun', action='store_true', help='Dry run')
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode to show all commands executed')
     args = parser.parse_args()
@@ -318,12 +302,7 @@ def main():
             set_stp(MY_BRIDGE, args.stp.lower())
         if args.fdelay:
             set_fdelay(MY_BRIDGE, args.fdelay)
-        if args.timeout:
-            timeout = args.timeout
-        else:
-            # default timeout is 15 seconds
-            timeout = 15
-        bring_bridge_up(BRIDGE_INTERFACE, master_interface, simple, timeout)
+        bring_bridge_up(BRIDGE_INTERFACE, master_interface, simple)
 
 if __name__ == "__main__":
     main()
