@@ -53,7 +53,7 @@ def is_networkmanager_running():
     stdout, stderr = run_command(cmd)
     return stdout == "active", stdout + "\n" + stderr
 
-def create_bridge(bridge_interface, interface, conn_name, conn_type, simple):
+def create_bridge(bridge_interface, interface, conn_name, conn_type):
     """
     Create a new bridge and on an interface
     """
@@ -63,11 +63,7 @@ def create_bridge(bridge_interface, interface, conn_name, conn_type, simple):
     if stderr:
         logging.error(f"Error adding bridge {bridge_interface}: {stderr}")
         return
-    if simple is True:
-        _, stderr = run_command(f"nmcli connection modify '{conn_name}' master {bridge_interface}")
-    else:
-        # work around a strange behavior of NetworkManager in SLE16 and TW
-        _, stderr = run_command(f"nmcli connection add type {conn_type} ifname {interface} con-name {interface}-slave master {MY_BRIDGE}")
+    _, stderr = run_command(f"nmcli connection add type {conn_type} ifname {interface} con-name {interface}-brslave master {MY_BRIDGE}")
     if stderr:
         logging.error(f"Error add type {conn_type} ifname {interface}: {stderr}")
         return
@@ -118,7 +114,7 @@ def delete_bridge(bridge_interface, bridge_name, interface):
             logging.error(f"Error deleting id {name}: {stderr}")
             return
 
-def bring_bridge_up(bridge_interface, interface, simple):
+def bring_bridge_up(bridge_interface, interface):
     """
     Bring the bridge up and set it to autoconnect
     """
@@ -128,17 +124,10 @@ def bring_bridge_up(bridge_interface, interface, simple):
     #    logging.error(f"Error modify {MY_BRIDGE} auto method: {stderr}")
     #    return
     run_command(f"nmcli connection modify {MY_BRIDGE} connection.autoconnect yes")
-    if simple is False:
-        _, stderr = run_command(f"nmcli connection up {interface}-slave")
-        if stderr:
-            logging.error(f"Error bringing up {bridge_interface}: {stderr}")
-            return
-    else:
-        _, stderr = run_command(f"nmcli connection up {MY_BRIDGE}")
-        if stderr:
-            logging.error(f"Error bringing up {MY_BRIDGE}: {stderr}")
-            return
-
+    _, stderr = run_command(f"nmcli connection up {interface}-brslave")
+    if stderr:
+        logging.error(f"Error bringing up {bridge_interface}: {stderr}")
+        return
 
 def get_nmcli_connection_info():
     """
@@ -222,7 +211,6 @@ def main():
             will pickup the first wireless one.")
     parser.add_argument('-i', '--interface', type=str, help='Specify the slave interface name')
     parser.add_argument('-f', '--force', action='store_true', help='Force deleting previous bridge')
-    parser.add_argument('-s', '--simple', action='store_true', help='Simple way of creating the bridge')
     parser.add_argument('-m', '--mac', action='store_true', help='Force using MAC address from slave interface')
     parser.add_argument('--stp', type=str, help='Set STP to yes or no')
     parser.add_argument('--fdelay', type=int, help='Set forward-delay option (in second)')
@@ -235,11 +223,6 @@ def main():
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
     else:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    if args.simple:
-        simple = True
-    else:
-        simple = False
 
     status, output = is_networkmanager_running()
     if status:
@@ -272,7 +255,7 @@ def main():
 
     if bridge_interface:
         if args.force:
-            delete_bridge(bridge_interface, bridge_name, master_interface+"-slave")
+            delete_bridge(bridge_interface, bridge_name, master_interface+"-brslave")
         else:
             logging.warning(f"Bridge {bridge_interface} already existing!")
             logging.info("You have 2 options:")
@@ -280,7 +263,7 @@ def main():
             logging.info(f"2) use --force to delete {bridge_interface} and setup another one")
             exit(1)
 
-    if not master_interface:
+    if master_interface is None:
         logging.error("No Ethernet or WiFi connection found. Adjust your network.")
         exit(1)
 
@@ -289,12 +272,9 @@ def main():
         exit(1)
 
     if not args.norun:
-        create_bridge(BRIDGE_INTERFACE, master_interface, conn_name, conn_type, simple)
+        create_bridge(BRIDGE_INTERFACE, master_interface, conn_name, conn_type)
         if args.mac:
-            if simple is False:
-                force_mac_address(MY_BRIDGE, mac_address)
-            else:
-                logging.info("Can't force MAC address in simple mode")
+            force_mac_address(MY_BRIDGE, mac_address)
         if args.stp:
             if args.stp.lower() not in ['yes', 'no']:
                 logging.error(f"{args.stp} is not yes or no")
@@ -302,7 +282,7 @@ def main():
             set_stp(MY_BRIDGE, args.stp.lower())
         if args.fdelay:
             set_fdelay(MY_BRIDGE, args.fdelay)
-        bring_bridge_up(BRIDGE_INTERFACE, master_interface, simple)
+        bring_bridge_up(BRIDGE_INTERFACE, master_interface)
 
 if __name__ == "__main__":
     main()
