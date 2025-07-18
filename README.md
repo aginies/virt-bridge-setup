@@ -19,6 +19,12 @@ This is a simple script which doesnt aim to support all network scenarios, for c
 - `-d` `--debug`: show debug info
 - Activates the bridge and configures the connection to automatically connect
 
+## Limits
+
+* It supports IPv4 only.
+* This is a simple script not intended for complex network scenariosi (vlan etc...); manual bridge setup is recommended for intricate configurations.
+* The script should be run locally (not remotely) immediately after installation and before any custom network configurations.
+
 ## Prerequisites
 
 - Python 3.x
