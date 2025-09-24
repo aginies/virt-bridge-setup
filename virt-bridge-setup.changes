@@ -1,4 +1,12 @@
 -------------------------------------------------------------------
+Wed Sep 24 07:26:41 UTC 2025 - Antoine Ginies <aginies@suse.com>
+
+version 2.0:
+  * major change to use NetworkManager API instead of nmcli
+  * by default the tool now clone the MAC address of the slace interface
+  * its mandatory to select the slave interface
+
+-------------------------------------------------------------------
 Tue May 20 13:48:18 UTC 2025 - Antoine Ginies <aginies@suse.com>
 
 - version 1.1:
