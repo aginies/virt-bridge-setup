@@ -25,7 +25,6 @@ version:
 
 install: 
 	mkdir -p $(DESTDIR)$(SBINDIR)
-	mkdir -p $(DESTDIR)$(ETCSYSNETDIR)
 	cp -av $(NAME).py $(DESTDIR)$(SBINDIR)/$(NAME)
 
 cleandist:
