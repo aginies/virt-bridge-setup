@@ -1,4 +1,12 @@
 -------------------------------------------------------------------
+Wed Sep 24 19:54:41 UTC 2025 - Antoine Ginies <aginies@suse.com>
+
+version 2.1:
+  * select a default slave interface if nto choosen
+  * add stp-priority option
+  * add an interactive mode with completion
+
+-------------------------------------------------------------------
 Wed Sep 24 07:26:41 UTC 2025 - Antoine Ginies <aginies@suse.com>
 
 version 2.0:
