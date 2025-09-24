@@ -33,5 +33,5 @@ cleandist:
 tar:	cleandist clean
 	mkdir $(PACKAGE)-$(VERSION)
 	cp -av $(FILES) $(PACKAGE)-$(VERSION)
-	tar cvfj $(PACKAGE)-$(VERSION).tar.bz2 $(PACKAGE)-$(VERSION)
+	tar cvfz $(PACKAGE)-$(VERSION).tar.gz $(PACKAGE)-$(VERSION)
 	rm -rf $(PACKAGE)-$(VERSION)
