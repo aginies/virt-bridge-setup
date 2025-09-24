@@ -14,6 +14,8 @@ import logging
 import subprocess
 import socket
 import struct
+import readline
+import cmd
 import dbus
 
 class NMManager:
@@ -63,12 +65,75 @@ class NMManager:
             logging.error("Please ensure NetworkManager is running.")
             sys.exit(1)
 
+    def select_default_slave_interface(self):
+        """
+        Select a default slave interface, first ethernet one, if not present wifi
+        """
+        ethernet_candidates = []
+        wifi_candidates = []
+        try:
+            devices_paths = self.nm_interface.GetAllDevices()
+            for dev_path in devices_paths:
+                dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
+                prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
+                iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
+                dev_type = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'DeviceType')
+                if iface == 'lo' or dev_type == 5:
+                    continue
+                ignored_prefixes = ['virbr', 'vnet', 'docker', 'p2p-dev-']
+                if any(iface.startswith(p) for p in ignored_prefixes):
+                    continue
+                if dev_type == 1:
+                    ethernet_candidates.append(iface)
+                elif dev_type == 2:
+                    wifi_candidates.append(iface)
+
+        except dbus.exceptions.DBusException as err:
+            logging.error("Error while selecting default interface: %s", err)
+            return None
+
+        if ethernet_candidates:
+            ethernet_candidates.sort()
+            slave_interface = ethernet_candidates[0]
+            logging.info("Default slave interface selected: %s (Ethernet)", slave_interface)
+            return slave_interface
+
+        if wifi_candidates:
+            wifi_candidates.sort()
+            slave_interface = wifi_candidates[0]
+            logging.info("Default slave interface selected: %s (Wi-Fi)", slave_interface)
+            return slave_interface
+
+        logging.warning("No suitable default slave interface was found.")
+        return None
+
+    def get_slave_candidates(self):
+        """ Returns a list of all potential slave interfaces (Ethernet, Wi-Fi) """
+        candidates = []
+        try:
+            devices_paths = self.nm_interface.GetAllDevices()
+            for dev_path in devices_paths:
+                dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
+                prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
+                iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
+                dev_type = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'DeviceType')
+
+                ignored_prefixes = ['lo', 'virbr', 'vnet', 'docker', 'p2p-dev-']
+                if dev_type not in [1, 2] or dev_type == 5 or any(
+                                    iface.startswith(p) for p in ignored_prefixes
+                                    ):
+                    continue
+                candidates.append(iface)
+        except dbus.exceptions.DBusException:
+            return []
+        candidates.sort()
+        return candidates
+
     def find_existing_bridges(self):
         """
         Finds all existing NetworkManager connections of type 'bridge'.
         """
         logging.debug("find_existing_bridges")
-        logging.info("Searching for existing bridge...")
         all_connections_config = []
         connections_paths = self.settings_interface.ListConnections()
         for path in connections_paths:
@@ -145,6 +210,7 @@ class NMManager:
         bridge_ifname = config['bridge_ifname']
         slave_iface = config['slave_interface']
         stp = config.get('stp', 'yes')
+        stp_priority = config.get('stp_priority', None)
         clone_mac = config.get('clone_mac', True)
         forward_delay = config.get('forward_delay', None)
 
@@ -167,12 +233,19 @@ class NMManager:
         }
         if clone_mac:
             mac_address = self._get_mac_address(slave_iface)
+            logging.info("MAC address of %s is %s", slave_iface, mac_address)
             if mac_address:
                 mac_bytes = [int(x, 16) for x in mac_address.split(':')]
                 bridge_settings['bridge']['mac-address'] = dbus.ByteArray(mac_bytes)
 
         if stp:
             bridge_settings['bridge']['stp'] = dbus.Boolean(stp.lower() == 'yes')
+
+        if stp_priority is not None:
+            if not 0 <= stp_priority <= 65535:
+                logging.error("Error: STP priority must be between 0 and 65535.")
+                sys.exit(1)
+            bridge_settings['bridge']['priority'] = dbus.UInt16(stp_priority)
 
         if forward_delay is not None:
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
@@ -215,6 +288,7 @@ class NMManager:
         """
         For a given interface name, finds the active device and returns its live network config.
         """
+        logging.debug("_get_active_network_config %s", interface_name)
         if not interface_name:
             return None
         try:
@@ -293,7 +367,7 @@ class NMManager:
 
     def delete_connection(self, name_or_uuid, show_list):
         """ Deletes a connection """
-        logging.debug("delete_connection %s", name_or_uuid)
+        logging.debug("delete_connection %s %s", name_or_uuid, show_list)
         path = self.find_connection(name_or_uuid)
         if path:
             try:
@@ -406,10 +480,11 @@ class NMManager:
                   f"{conn['interface-name']:<15} "
                   f"{conn['uuid']}"
                   )
+        return all_connections
 
     def check_interface_exist(self, interface):
         """ Check a interface exist """
-        logging.debug("check_interface_exist")
+        logging.debug("check_interface_exist %s", interface)
         try:
             devices_paths = self.nm_interface.GetAllDevices()
             if not devices_paths:
@@ -427,6 +502,17 @@ class NMManager:
             sys.exit(1)
         except dbus.exceptions.DBusException as err:
             logging.error("Error getting interface: %s", err)
+
+    def get_all_connection_identifiers(self):
+        """Returns a flat list of all connection IDs and UUIDs for completion."""
+        identifiers = []
+        connections = self.list_connections.__wrapped__(self) if hasattr(
+            self.list_connections, '__wrapped__'
+            ) else self.list_connections()
+        for conn in connections:
+            identifiers.append(conn['id'])
+            identifiers.append(conn['uuid'])
+        return identifiers
 
     def list_devices(self):
         """
@@ -531,13 +617,166 @@ class NMManager:
         except dbus.exceptions.DBusException as err:
             logging.error("Error getting devices: %s", err)
 
-def run_command(cmd):
+class InteractiveShell(cmd.Cmd):
+    """ A simple interactive shell to manage NetworkManager bridges """
+    intro = "\nWelcome to the interactive virt-bridge-setup shell.\n"
+    intro += "Type `help` or `?` to list commands.\n"
+    promptline = '_________________________________________\n'
+    prompt = promptline + "virt-bridge #> "
+
+    def __init__(self, manager):
+        super().__init__()
+        self.manager = manager
+        try:
+            delims = readline.get_completer_delims()
+            delims = delims.replace('-', '')
+            readline.set_completer_delims(delims)
+        except ImportError:
+            pass
+
+    def do_add(self, arg_string):
+        """
+        Adds a new bridge connection with specified options
+        """
+        logging.debug("do_add %s", arg_string)
+        parser = argparse.ArgumentParser(prog='add', description='Add a new bridge connection.')
+        parser.add_argument('--conn-name', dest='conn_name')
+        parser.add_argument('--bridge-ifname', dest='bridge_ifname')
+        parser.add_argument('--slave-interface', dest='slave_interface')
+        parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false')
+        parser.add_argument('--stp', choices=['yes', 'no'], default='yes')
+        parser.add_argument('--fdelay', type=int, dest='fdelay')
+        parser.add_argument('--stp-priority', type=int, dest='stp_priority')
+
+        try:
+            args = parser.parse_args(arg_string.split())
+        except SystemExit:
+            return
+
+        if not args.slave_interface:
+            print("No slave interface provided. Selecting a default...")
+            args.slave_interface = self.manager.select_default_slave_interface()
+            if not args.slave_interface:
+                print("Error: Could not find a suitable default slave interface.")
+                return
+
+        if not args.bridge_ifname:
+            args.bridge_ifname = "mybr0"
+            print(f"No bridge interface name provided. Defaulting to '{args.bridge_ifname}'.")
+
+        if not args.conn_name:
+            args.conn_name = f"c-{args.bridge_ifname}"
+            print(f"No connection name provided. Defaulting to '{args.conn_name}'.")
+
+        bridge_config = {
+            'conn_name': args.conn_name,
+            'bridge_ifname': args.bridge_ifname,
+            'slave_interface': args.slave_interface,
+            'no_clone_mac': args.no_clone_mac,
+            'stp': args.stp,
+            'forward_delay': args.fdelay,
+            'stp_priority': args.stp_priority
+        }
+        self.manager.add_bridge_connection(bridge_config)
+        slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
+        self.manager.activate_connection(slave_conn_name)
+
+    def complete_add(self, text, line, begidx, _endidx):
+        """ Provides context-aware auto-completion for the 'add' command """
+        words_before_cursor = line[:begidx].split()
+        if not words_before_cursor:
+            return []
+        last_full_word = words_before_cursor[-1]
+        if last_full_word in ['--slave-interface']:
+            candidates = self.manager.get_slave_candidates()
+            return [c for c in candidates if c.startswith(text)]
+        if last_full_word == '--stp':
+            return [s for s in ['yes', 'no'] if s.startswith(text)]
+
+        options = [
+            '--conn-name', '--bridge-ifname', '--slave-interface', '--stp', 
+            '--fdelay', '--stp-priority', '--no-clone-mac'
+        ]
+        return [opt for opt in options if opt.startswith(text)]
+
+    def do_list_devices(self, _):
+        """ List all available network devices. Alias: dev """
+        self.manager.list_devices()
+
+    def do_dev(self, arg):
+        """Alias for list_devices."""
+        return self.do_list_devices(arg)
+
+    def do_list_connections(self, _):
+        """ List all saved connection profiles. Alias: conn """
+        self.manager.list_connections()
+
+    def do_conn(self, arg):
+        """ Alias for list_connections """
+        return self.do_list_connections(arg)
+
+    def do_list_bridges(self, _):
+        """ Find and list all configured bridge connections. Alias: showb """
+        found_bridges = self.manager.find_existing_bridges()
+        if not found_bridges:
+            print("No existing bridge connections found.")
+        else:
+            self.manager.show_existing_bridges(found_bridges)
+
+    def do_show_bridges(self, arg):
+        """ Alias for list_bridges """
+        return self.do_list_bridges(arg)
+
+    def do_delete(self, arg):
+        """ Delete a connection by name or UUID. Usage: delete <name|uuid> """
+        if not arg:
+            print("Error: delete requires a connection name or UUID.")
+            return
+        self.manager.delete_connection(arg, True)
+
+    def complete_delete(self, text, _line, _begidx, _endidx):
+        """ complete delete command """
+        return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
+
+    def do_activate(self, arg):
+        """ Activate a connection by name or UUID. Usage: activate <name|uuid> """
+        if not arg:
+            print("Error: activate requires a connection name or UUID.")
+            return
+        self.manager.activate_connection(arg)
+
+    def complete_activate(self, text, _line, _begidx, _endidx):
+        """ Complete activation """
+        return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
+
+    def do_deactivate(self, arg):
+        """ Deactivate a connection by name or UUID. Usage: activate <name|uuid> """
+        if not arg:
+            print("Error: deactivate requires a connection name or UUID.")
+            return
+        self.manager.deactivate_connection(arg)
+
+    def complete_deactivate(self, text, _line, _begidx, _endidx):
+        """ Complete deactivation """
+        return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
+
+    def do_exit(self, _):
+        """ Exit the interactive shell. Alias: quit """
+        print("Goodbye!")
+        return True
+
+    def do_quit(self, arg):
+        """ Alias for exit """
+        return self.do_exit(arg)
+
+
+def run_command(ucmd):
     """
     Launch a system command and log it if debug is enabled
     """
-    logging.debug("run_command %s", cmd)
+    logging.debug("run_command %s", ucmd)
     proc = subprocess.Popen(
-        cmd, shell=True,
+        ucmd, shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True
@@ -548,21 +787,21 @@ def run_command(cmd):
     except subprocess.TimeoutExpired:
         proc.kill()
         out, errs = proc.communicate()
-        return "", f"Command timed out: {cmd}\n{errs}"
+        return "", f"Command timed out: {ucmd}\n{errs}"
 
 def is_networkmanager_running():
     """
     Check if NetworkManager is running using systemctl
     """
-    cmd = "systemctl is-active NetworkManager"
-    stdout, stderr = run_command(cmd)
+    rcmd = "systemctl is-active NetworkManager"
+    stdout, stderr = run_command(rcmd)
     return stdout == "active", stdout + "\n" + stderr
 
 def main():
     """ The main function """
+    manager = NMManager()
     parser = argparse.ArgumentParser(description="Manage Bridge connections.")
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
-
     parser_add_bridge = subparsers.add_parser('add', help='Add a new bridge connection.')
     parser_add_bridge.add_argument(
         '-cn',
@@ -582,7 +821,7 @@ def main():
         '-i',
         '--slave-interface',
         dest='slave_interface',
-        required=True,
+        required=False,
         help='The existing physical interface to enslave (e.g., eth0).'
     )
     parser_add_bridge.add_argument(
@@ -598,6 +837,12 @@ def main():
         help='Enable or disable Spanning Tree Protocol (STP). Default: yes.'
     )
     parser_add_bridge.add_argument(
+        '--stp-priority',
+        type=int,
+        default=None,
+        help='Set the STP priority (0-65535). Lower is more preferred.'
+    )
+    parser_add_bridge.add_argument(
         '--fdelay',
         type=int,
         default=None,
@@ -607,6 +852,7 @@ def main():
     subparsers.add_parser('dev', help='Show all available network devices.')
     subparsers.add_parser('conn', help='Show all connections.')
     subparsers.add_parser('showb', help='Show all current bridges.')
+    subparsers.add_parser('interactive', help='Start an interactive shell session.')
     parser.add_argument('-f', '--force', action='store_true',
                         help='Force adding a bridge (even if one exist already)'
                         )
@@ -641,7 +887,6 @@ def main():
         logging.error(output)
         sys.exit(1)
 
-    manager = NMManager()
     found_bridges = manager.find_existing_bridges()
 
     if args.command == 'add':
@@ -657,10 +902,15 @@ def main():
                 manager.list_devices()
             if not args.bridge_ifname:
                 args.bridge_ifname = "mybr0"
+            if not args.slave_interface:
+                args.slave_interface = manager.select_default_slave_interface()
+            if args.slave_interface is None:
+                logging.error("No default interface can be used ... exiting")
+                sys.exit(1)
             if not args.conn_name:
                 args.conn_name = "c-mybr0"
                 manager.check_interface_exist(args.slave_interface)
-
+            # sounds everything is ok
             bridge_config = {
                 'conn_name': args.conn_name,
                 'bridge_ifname': args.bridge_ifname,
@@ -672,7 +922,10 @@ def main():
             manager.add_bridge_connection(bridge_config)
             slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
             manager.activate_connection(slave_conn_name)
-    if args.command == 'dev':
+    if args.command == 'interactive':
+        InteractiveShell(manager).cmdloop()
+        sys.exit(0)
+    elif args.command == 'dev':
         manager.list_devices()
     elif args.command == 'conn':
         manager.list_connections()
