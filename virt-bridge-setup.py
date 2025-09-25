@@ -286,6 +286,9 @@ class NMManager:
                                                     )
 
         if forward_delay is not None:
+            if not 0 <= forward_delay <= 65535:
+                logging.error("Error: Forward delay must be between 0 and 30.")
+                sys.exit(1)
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
 
         logging.debug("Bridge settings %s", bridge_settings)
@@ -898,7 +901,7 @@ def main():
         '--fdelay',
         type=int,
         default=None,
-        help='Set the STP forward delay in seconds (e.g., 15).'
+        help='Set the STP forward delay in seconds (0-30).'
     )
 
     subparsers.add_parser('dev', help='Show all available network devices.')
