@@ -153,6 +153,7 @@ class NMManager:
                     'interface-name': config['connection'].get('interface-name', 'N/A'),
                     'slaves': [],
                     'ipv4': {},
+                    'bridge_settings': {},
                 }
                 ipv4_config = config.get('ipv4', {})
                 bridge_details['ipv4']['method'] = ipv4_config.get('method', 'disabled')
@@ -162,7 +163,28 @@ class NMManager:
                         ]
                 bridge_details['ipv4']['gateway'] = ipv4_config.get('gateway', None)
                 bridge_details['ipv4']['dns'] = [str(d) for d in ipv4_config.get('dns', [])]
-
+                bridge_config = config.get('bridge', {})
+                mac_bytes = bridge_config.get('mac-address')
+                mac_str = 'Not set' if not mac_bytes else ':'.join(f'{b:02X}' for b in mac_bytes)
+                forward_delay_v = bridge_config.get('forward-delay')
+                priority_v = bridge_config.get('priority')
+                vlan_setting = bridge_config.get('vlan-filtering')
+                vlan_str = 'Yes' if vlan_setting is True else (
+                        'No' if vlan_setting is False else 'No (Default)'
+                        )
+                forward_delay_str = forward_delay_v if forward_delay_v is int else None
+                priority_str = priority_v if priority_v is int else None
+                bridge_details['bridge_settings'] = {
+                    'stp': 'Yes' if bridge_config.get('stp', True) else 'No',
+                    'priority': priority_v,
+                    'forward-delay': forward_delay_str,
+                    'multicast-snooping': 'Yes' if bridge_config.get(
+                                                    'multicast-snooping', True
+                                                    ) else 'No',
+                    'mac-address': mac_str,
+                    'vlan-filtering': vlan_str,
+                    'vlan-default-pvid': bridge_config.get('vlan-default-pvid')
+                }
                 bridges.append(bridge_details)
 
         for bridge in bridges:
@@ -189,9 +211,19 @@ class NMManager:
             if bridge['slaves']:
                 print("  |- Slave(s):")
                 for slave in bridge['slaves']:
-                    print(f"  │  └─ {slave['iface']} (Profile: {slave['conn_id']})")
+                    print(f"  |  |- {slave['iface']} (Profile: {slave['conn_id']})")
             else:
-                print("  - Slave:       (None)")
+                print("  |- Slave:       (None)")
+            b_settings = bridge['bridge_settings']
+            print("  |- Bridge Settings:")
+            print(f"  |  |- STP Enabled:   {b_settings['stp']}")
+            print(f"  |  |- STP Priority:  {b_settings['priority']}")
+            print(f"  |  |- Forward Delay: {b_settings['forward-delay']}")
+            print(f"  |  |- IGMP snooping: {b_settings['multicast-snooping']}")
+            print(f"  |  |- VLAN Filtering: {b_settings['vlan-filtering']}")
+            if b_settings['vlan-filtering'] == "Yes":
+                print(f"  |   - vlan-default-pvid:    {b_settings['vlan-default-pvid']}")
+            print(f"  |   - MAC:    {b_settings['mac-address']}")
             ipv4 = bridge['ipv4']
             live_config = self._get_active_network_config(bridge['interface-name'])
             if live_config:
