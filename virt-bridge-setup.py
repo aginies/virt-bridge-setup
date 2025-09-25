@@ -168,15 +168,15 @@ class NMManager:
                 mac_str = 'Not set' if not mac_bytes else ':'.join(f'{b:02X}' for b in mac_bytes)
                 forward_delay_v = bridge_config.get('forward-delay')
                 priority_v = bridge_config.get('priority')
+                priority_str = priority_v if priority_v is int else None
                 vlan_setting = bridge_config.get('vlan-filtering')
                 vlan_str = 'Yes' if vlan_setting is True else (
                         'No' if vlan_setting is False else 'No (Default)'
                         )
                 forward_delay_str = forward_delay_v if forward_delay_v is int else None
-                priority_str = priority_v if priority_v is int else None
                 bridge_details['bridge_settings'] = {
                     'stp': 'Yes' if bridge_config.get('stp', True) else 'No',
-                    'priority': priority_v,
+                    'priority': priority_str,
                     'forward-delay': forward_delay_str,
                     'multicast-snooping': 'Yes' if bridge_config.get(
                                                     'multicast-snooping', True
@@ -693,19 +693,24 @@ class InteractiveShell(cmd.Cmd):
         """
         logging.debug("do_add %s", arg_string)
         parser = argparse.ArgumentParser(prog='add', description='Add a new bridge connection.')
-        parser.add_argument('--conn-name', dest='conn_name')
-        parser.add_argument('--bridge-ifname', dest='bridge_ifname')
-        parser.add_argument('--slave-interface', dest='slave_interface')
-        parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false')
-        parser.add_argument('--stp', choices=['yes', 'no'], default='yes')
-        parser.add_argument('--fdelay', type=int, dest='fdelay')
-        parser.add_argument('--stp-priority', type=int, dest='stp_priority')
+        parser.add_argument('--conn-name', dest='conn_name', help=help_data['help_conn_name'],)
+        parser.add_argument('--bridge-ifname', dest='bridge_ifname',
+                            help=help_data['help_bridge_ifname'],)
+        parser.add_argument('--slave-interface', dest='slave_interface',
+                            help=help_data['slave_interface'])
+        parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false',
+                            help=help_data['clone_mac'])
+        parser.add_argument('--stp', choices=['yes', 'no'], default='yes', help=help_data['stp'])
+        parser.add_argument('--fdelay', type=int, dest='fdelay', help=help_data['fdelay'])
+        parser.add_argument('--stp-priority', type=int, dest='stp_priority',
+                            help=help_data['stp_priority'])
         parser.add_argument('--multicast-snooping', choices=['yes', 'no'],
-                            default='yes', dest='multicast_snooping')
+                            default='yes', dest='multicast_snooping',
+                            help=help_data['stp_priority'])
         parser.add_argument('--vlan-filtering', choices=['yes', 'no'],
-                            default='no', dest='vlan_filtering',)
+                            default='no', dest='vlan_filtering', help=help_data['vlan_filtering'])
         parser.add_argument('--vlan-default-pvid', type=int, default=None,
-                    dest='vlan_default_pvid',)
+                    dest='vlan_default_pvid', help=help_data['vlan_default_pvid'])
         try:
             args = parser.parse_args(arg_string.split())
         except SystemExit:
@@ -859,6 +864,19 @@ def is_networkmanager_running():
     stdout, stderr = run_command(rcmd)
     return stdout == "active", stdout + "\n" + stderr
 
+help_data = {
+    'help_conn_name': 'The name for the new bridge connection profile (e.g., my-bridge).',
+    'help_bridge_ifname': 'The name for the bridge network interface (e.g., br0).',
+    'slave_interface': 'The existing physical interface to enslave (e.g., eth0).',
+    'clone_mac': 'Do not set the bridge MAC address to be the same as the slave interface.',
+    'stp': 'Enables or disables Spanning Tree Protocol (STP). Default: yes.',
+    'stp_priority': 'Sets the STP priority (0-65535). Lower is more preferred.',
+    'multicast_snooping': 'Enables or disables IGMP/MLD snooping. Default: yes.',
+    'fdelay': 'Sets the STP forward delay in seconds (0-30).',
+    'vlan_filtering': 'Enables or disables VLAN filtering on the bridge. Default: no',
+    'vlan_default_pvid': 'Sets the default Port VLAN ID (1-4094) for the bridge port itself.',
+}
+
 def main():
     """ The main function """
     manager = NMManager()
@@ -870,41 +888,42 @@ def main():
         '--conn-name',
         dest='conn_name',
         required=False,
-        help='The name for the new bridge connection profile (e.g., my-bridge).'
+        help=help_data['help_conn_name'],
     )
     parser_add_bridge.add_argument(
         '-bn',
         '--bridge-ifname',
         dest='bridge_ifname',
         required=False,
-        help='The name for the bridge network interface (e.g., br0).'
+        help=help_data['help_bridge_ifname'],
     )
     parser_add_bridge.add_argument(
         '-i',
         '--slave-interface',
         dest='slave_interface',
         required=False,
-        help='The existing physical interface to enslave (e.g., eth0).'
+        help=help_data['slave_interface']
     )
     parser_add_bridge.add_argument(
         '-ncm',
         '--no-clone-mac',
         dest='clone_mac',
         action='store_false',
-        help='Do not set the bridge MAC address to be the same as the slave interface.'
+        help=help_data['clone_mac']
     )
     parser_add_bridge.add_argument(
         '--stp',
         choices=['yes', 'no'],
         default='yes',
-        help='Enables or disables Spanning Tree Protocol (STP). Default: yes.'
+        help=help_data['stp']
     )
     parser_add_bridge.add_argument(
         '-sp',
         '--stp-priority',
         type=int,
         default=None,
-        help='Sets the STP priority (0-65535). Lower is more preferred.'
+        dest='stp_priority',
+        help=help_data['stp_priority']
     )
     parser_add_bridge.add_argument(
         '-ms',
@@ -912,20 +931,20 @@ def main():
         choices=['yes', 'no'],
         default='yes',
         dest='multicast_snooping',
-        help='Enables or disables IGMP/MLD snooping. Default: yes.'
+        help=help_data['multicast_snooping']
     )
     parser_add_bridge.add_argument(
         '--fdelay',
         type=int,
         default=None,
-        help='Sets the STP forward delay in seconds (0-30).'
+        help=help_data['fdelay']
     )
     parser_add_bridge.add_argument(
         '--vlan-filtering',
         choices=['yes', 'no'],
         default='no',
         dest='vlan_filtering',
-        help='Enables or disables VLAN filtering on the bridge. Default: no'
+        help=help_data['vlan_filtering']
     )
     parser_add_bridge.add_argument(
         '-vdp',
@@ -933,7 +952,7 @@ def main():
         type=int,
         default=None,
         dest='vlan_default_pvid',
-        help='Sets the default Port VLAN ID (1-4094) for the bridge port itself.'
+        help=help_data['vlan_default_pvid']
     )
     subparsers.add_parser('dev', help='Show all available network devices.')
     subparsers.add_parser('conn', help='Show all connections.')
@@ -1003,6 +1022,7 @@ def main():
                 'slave_interface': args.slave_interface,
                 'clone_mac': args.clone_mac,
                 'stp': args.stp,
+                'stp_priority': args.stp_priority,
                 'fdelay': args.fdelay,
                 'multicast_snooping': args.multicast_snooping,
                 'vlan-filtering': args.vlan_filtering,
