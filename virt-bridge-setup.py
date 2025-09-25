@@ -248,6 +248,7 @@ class NMManager:
         multicast_snooping = config.get('multicast_snooping', True)
         vlan_filtering = config.get('vlan_filtering', False)
         vlan_default_pvid = config.get('vlan_default_pvid', None)
+        dry_run = config.get('dry_run', False)
 
         slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
 
@@ -306,9 +307,12 @@ class NMManager:
         logging.debug("Bridge settings %s", bridge_settings)
 
         try:
-            logging.info("Creating bridge profile %s...", bridge_conn_name)
-            bridge_path = self.settings_interface.AddConnection(bridge_settings)
-            logging.info("Successfully added bridge profile. Path: %s", bridge_path)
+            if dry_run is False:
+                logging.info("Creating bridge profile %s...", bridge_conn_name)
+                #bridge_path = self.settings_interface.AddConnection(bridge_settings)
+                #logging.info("Successfully added bridge profile. Path: %s", bridge_path)
+            else:
+                logging.info("DRY-RUN: Successfully added bridge profile")
         except dbus.exceptions.DBusException as err:
             logging.error("Error adding bridge connection profile: %s", err)
             return
@@ -329,8 +333,13 @@ class NMManager:
             logging.info("Creating slave profile %s for interface %s...",
                         slave_conn_name, slave_iface
                         )
-            self.settings_interface.AddConnection(slave_settings)
-            logging.info("Successfully enslaved interface to bridge.")
+            if dry_run is False:
+                #self.settings_interface.AddConnection(slave_settings)
+                logging.info("Successfully enslaved interface %s to bridge.",
+                             slave_iface)
+            else:
+                logging.info("DRY-RUN: Successfully enslaved interface %s to bridge.",
+                             slave_iface)
         except dbus.exceptions.DBusException as err:
             logging.error("Error adding slave connection profile: %s", err)
             logging.error("Cleaning up bridge profile due to error...")
@@ -543,16 +552,22 @@ class NMManager:
             if not devices_paths:
                 logging.error("No network devices found.")
                 return
+            ifound = False
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
                 iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
                 if interface != iface:
                     continue
+                if interface == iface:
+                    ifound = True
+                    break
+            if ifound is not True:
+                logging.error("No interface: %s", interface)
+                self.list_devices()
+                sys.exit(1)
+            else:
                 return True
-            logging.error("No interface: %s", interface)
-            self.list_devices()
-            sys.exit(1)
         except dbus.exceptions.DBusException as err:
             logging.error("Error getting interface: %s", err)
 
@@ -693,13 +708,15 @@ class InteractiveShell(cmd.Cmd):
         """
         logging.debug("do_add %s", arg_string)
         parser = argparse.ArgumentParser(prog='add', description='Add a new bridge connection.')
-        parser.add_argument('--conn-name', dest='conn_name', help=help_data['help_conn_name'],)
+        parser.add_argument('--conn-name', dest='conn_name', help=help_data['help_conn_name'],
+                            default='c-mybr0')
         parser.add_argument('--bridge-ifname', dest='bridge_ifname',
-                            help=help_data['help_bridge_ifname'],)
+                            help=help_data['help_bridge_ifname'],
+                            default='mybr0')
         parser.add_argument('--slave-interface', dest='slave_interface',
                             help=help_data['slave_interface'])
         parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false',
-                            help=help_data['clone_mac'])
+                            help=help_data['clone_mac'],)
         parser.add_argument('--stp', choices=['yes', 'no'], default='yes', help=help_data['stp'])
         parser.add_argument('--fdelay', type=int, dest='fdelay', help=help_data['fdelay'])
         parser.add_argument('--stp-priority', type=int, dest='stp_priority',
@@ -722,14 +739,6 @@ class InteractiveShell(cmd.Cmd):
             if not args.slave_interface:
                 print("Error: Could not find a suitable default slave interface.")
                 return
-
-        if not args.bridge_ifname:
-            args.bridge_ifname = "mybr0"
-            print(f"No bridge interface name provided. Defaulting to '{args.bridge_ifname}'.")
-
-        if not args.conn_name:
-            args.conn_name = f"c-{args.bridge_ifname}"
-            print(f"No connection name provided. Defaulting to '{args.conn_name}'.")
 
         bridge_config = {
             'conn_name': args.conn_name,
@@ -888,12 +897,14 @@ def main():
         '--conn-name',
         dest='conn_name',
         required=False,
+        default="c-mybr0",
         help=help_data['help_conn_name'],
     )
     parser_add_bridge.add_argument(
         '-bn',
         '--bridge-ifname',
         dest='bridge_ifname',
+        default="mybr0",
         required=False,
         help=help_data['help_bridge_ifname'],
     )
@@ -961,6 +972,8 @@ def main():
     parser.add_argument('-f', '--force', action='store_true',
                         help='Force adding a bridge (even if one exist already)'
                         )
+    parser.add_argument('-dr', '--dry-run', dest='dry_run',
+                        action='store_true', help='Dont do anything')
     parser_delete = subparsers.add_parser('delete', help='Delete a connection.')
     parser_delete.add_argument('name', help='The name (ID) or UUID of the connection to delete.')
     parser_activate = subparsers.add_parser('activate', help='Activate a connection.')
@@ -973,7 +986,7 @@ def main():
                                     )
     parser.add_argument('-d', '--debug',
                         action='store_true',
-                        help='Enable debug mode to show all commands executed'
+                        help='Enable debug mode (very verbose...)'
                         )
 
     if len(sys.argv) == 1:
@@ -1004,17 +1017,11 @@ def main():
             sys.exit(1)
         else:
             if not args.slave_interface:
-                manager.list_devices()
-            if not args.bridge_ifname:
-                args.bridge_ifname = "mybr0"
-            if not args.slave_interface:
                 args.slave_interface = manager.select_default_slave_interface()
+            manager.check_interface_exist(args.slave_interface)
             if args.slave_interface is None:
                 logging.error("No default interface can be used ... exiting")
                 sys.exit(1)
-            if not args.conn_name:
-                args.conn_name = "c-mybr0"
-                manager.check_interface_exist(args.slave_interface)
             # sounds everything is ok
             bridge_config = {
                 'conn_name': args.conn_name,
@@ -1025,12 +1032,14 @@ def main():
                 'stp_priority': args.stp_priority,
                 'fdelay': args.fdelay,
                 'multicast_snooping': args.multicast_snooping,
-                'vlan-filtering': args.vlan_filtering,
-                'vlan-default-pvid': args.vlan_default_pvid,
+                'vlan_filtering': args.vlan_filtering,
+                'vlan_default-pvid': args.vlan_default_pvid,
+                'dry_run': args.dry_run,
             }
             manager.add_bridge_connection(bridge_config)
             slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
-            manager.activate_connection(slave_conn_name)
+            if args.dry_run is False:
+                manager.activate_connection(slave_conn_name)
     if args.command == 'interactive':
         InteractiveShell(manager).cmdloop()
         sys.exit(0)
