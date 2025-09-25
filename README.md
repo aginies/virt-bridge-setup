@@ -29,6 +29,7 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   -f, --force           Force adding a bridge (even if one exist already)
+  -dr, --dry-run        Dont do anything
   -d, --debug           Enable debug mode to show all commands executed
 
 # virt-bridge-setup.py add --help
@@ -107,10 +108,6 @@ virt-bridge #> add --[TAB]
 --bridge-ifname       --multicast-snooping  --stp                 --vlan-filtering
 --conn-name           --no-clone-mac        --stp-priority        
 --fdelay              --slave-interface     --vlan-default-pvid   
-_________________________________________
-
-virt-bridge #> add --slave-interface [TAB]
-enp1s0f0  eth0      wlp2s0    
 _________________________________________
 
 virt-bridge #> add --slave-interface [TAB]
