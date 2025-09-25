@@ -343,8 +343,8 @@ class NMManager:
         try:
             if dry_run is False:
                 logging.info("Creating bridge profile %s...", bridge_conn_name)
-                #bridge_path = self.settings_interface.AddConnection(bridge_settings)
-                #logging.info("Successfully added bridge profile. Path: %s", bridge_path)
+                bridge_path = self.settings_interface.AddConnection(bridge_settings)
+                logging.info("Successfully added bridge profile. Path: %s", bridge_path)
             else:
                 logging.info("DRY-RUN: Successfully added bridge profile")
         except dbus.exceptions.DBusException as err:
@@ -368,7 +368,7 @@ class NMManager:
                         slave_conn_name, slave_iface
                         )
             if dry_run is False:
-                #self.settings_interface.AddConnection(slave_settings)
+                self.settings_interface.AddConnection(slave_settings)
                 logging.info("Successfully enslaved interface %s to bridge.",
                              slave_iface)
             else:
