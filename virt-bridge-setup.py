@@ -67,10 +67,12 @@ class NMManager:
 
     def select_default_slave_interface(self):
         """
-        Select a default slave interface, first ethernet one, if not present wifi
+        Selects a default slave interface, prioritizing active devices with IP addresses.
         """
-        ethernet_candidates = []
-        wifi_candidates = []
+        eth_with_ip = []
+        eth_without_ip = []
+        wifi_with_ip = []
+        wifi_without_ip = []
         try:
             devices_paths = self.nm_interface.GetAllDevices()
             for dev_path in devices_paths:
@@ -78,29 +80,61 @@ class NMManager:
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
                 iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
                 dev_type = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'DeviceType')
+
                 if iface == 'lo' or dev_type == 5:
                     continue
                 ignored_prefixes = ['virbr', 'vnet', 'docker', 'p2p-dev-']
                 if any(iface.startswith(p) for p in ignored_prefixes):
                     continue
+
+                ip4_config_path = prop_interface.Get(
+                                'org.freedesktop.NetworkManager.Device', 'Ip4Config')
+                has_ip = False
+                if ip4_config_path != "/":
+                    ip4_config_proxy = self.bus.get_object(
+                                    'org.freedesktop.NetworkManager', ip4_config_path)
+                    ip4_props_iface = dbus.Interface(ip4_config_proxy,
+                                                     'org.freedesktop.DBus.Properties')
+                    ip4_props = ip4_props_iface.GetAll(
+                                    'org.freedesktop.NetworkManager.IP4Config')
+                    if ip4_props.get('Addresses'):
+                        has_ip = True
+
                 if dev_type == 1:
-                    ethernet_candidates.append(iface)
+                    if has_ip:
+                        eth_with_ip.append(iface)
+                    else:
+                        eth_without_ip.append(iface)
                 elif dev_type == 2:
-                    wifi_candidates.append(iface)
+                    if has_ip:
+                        wifi_with_ip.append(iface)
+                    else:
+                        wifi_without_ip.append(iface)
 
         except dbus.exceptions.DBusException as err:
             logging.error("Error while selecting default interface: %s", err)
             return None
 
-        if ethernet_candidates:
-            ethernet_candidates.sort()
-            slave_interface = ethernet_candidates[0]
+        for candidates in [eth_with_ip, wifi_with_ip, eth_without_ip, wifi_without_ip]:
+            candidates.sort()
+
+        if eth_with_ip:
+            slave_interface = eth_with_ip[0]
+            logging.info("Default slave interface selected: %s (Active Ethernet)", slave_interface)
+            return slave_interface
+
+        if wifi_with_ip:
+            slave_interface = wifi_with_ip[0]
+            logging.info("Default slave interface selected: %s (Active Wi-Fi)", slave_interface)
+            return slave_interface
+
+        if eth_without_ip:
+            slave_interface = eth_without_ip[0]
             logging.info("Default slave interface selected: %s (Ethernet)", slave_interface)
             return slave_interface
 
-        if wifi_candidates:
-            wifi_candidates.sort()
-            slave_interface = wifi_candidates[0]
+        if wifi_without_ip:
+            slave_interface = wifi_without_ip[0]
             logging.info("Default slave interface selected: %s (Wi-Fi)", slave_interface)
             return slave_interface
 
@@ -153,6 +187,7 @@ class NMManager:
                     'interface-name': config['connection'].get('interface-name', 'N/A'),
                     'slaves': [],
                     'ipv4': {},
+                    'bridge_settings': {},
                 }
                 ipv4_config = config.get('ipv4', {})
                 bridge_details['ipv4']['method'] = ipv4_config.get('method', 'disabled')
@@ -162,7 +197,28 @@ class NMManager:
                         ]
                 bridge_details['ipv4']['gateway'] = ipv4_config.get('gateway', None)
                 bridge_details['ipv4']['dns'] = [str(d) for d in ipv4_config.get('dns', [])]
-
+                bridge_config = config.get('bridge', {})
+                mac_bytes = bridge_config.get('mac-address')
+                mac_str = 'Not set' if not mac_bytes else ':'.join(f'{b:02X}' for b in mac_bytes)
+                forward_delay_v = bridge_config.get('forward-delay')
+                priority_v = bridge_config.get('priority')
+                priority_str = priority_v if priority_v is int else None
+                vlan_setting = bridge_config.get('vlan-filtering')
+                vlan_str = 'Yes' if vlan_setting is True else (
+                        'No' if vlan_setting is False else 'No (Default)'
+                        )
+                forward_delay_str = forward_delay_v if forward_delay_v is int else None
+                bridge_details['bridge_settings'] = {
+                    'stp': 'Yes' if bridge_config.get('stp', True) else 'No',
+                    'priority': priority_str,
+                    'forward-delay': forward_delay_str,
+                    'multicast-snooping': 'Yes' if bridge_config.get(
+                                                    'multicast-snooping', True
+                                                    ) else 'No',
+                    'mac-address': mac_str,
+                    'vlan-filtering': vlan_str,
+                    'vlan-default-pvid': bridge_config.get('vlan-default-pvid')
+                }
                 bridges.append(bridge_details)
 
         for bridge in bridges:
@@ -189,9 +245,19 @@ class NMManager:
             if bridge['slaves']:
                 print("  |- Slave(s):")
                 for slave in bridge['slaves']:
-                    print(f"  │  └─ {slave['iface']} (Profile: {slave['conn_id']})")
+                    print(f"  |  |- {slave['iface']} (Profile: {slave['conn_id']})")
             else:
-                print("  - Slave:       (None)")
+                print("  |- Slave:       (None)")
+            b_settings = bridge['bridge_settings']
+            print("  |- Bridge Settings:")
+            print(f"  |  |- STP Enabled:   {b_settings['stp']}")
+            print(f"  |  |- STP Priority:  {b_settings['priority']}")
+            print(f"  |  |- Forward Delay: {b_settings['forward-delay']}")
+            print(f"  |  |- IGMP snooping: {b_settings['multicast-snooping']}")
+            print(f"  |  |- VLAN Filtering: {b_settings['vlan-filtering']}")
+            if b_settings['vlan-filtering'] == "Yes":
+                print(f"  |   - vlan-default-pvid:    {b_settings['vlan-default-pvid']}")
+            print(f"  |   - MAC:    {b_settings['mac-address']}")
             ipv4 = bridge['ipv4']
             live_config = self._get_active_network_config(bridge['interface-name'])
             if live_config:
@@ -213,6 +279,10 @@ class NMManager:
         stp_priority = config.get('stp_priority', None)
         clone_mac = config.get('clone_mac', True)
         forward_delay = config.get('forward_delay', None)
+        multicast_snooping = config.get('multicast_snooping', True)
+        vlan_filtering = config.get('vlan_filtering', False)
+        vlan_default_pvid = config.get('vlan_default_pvid', None)
+        dry_run = config.get('dry_run', False)
 
         slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
 
@@ -247,15 +317,36 @@ class NMManager:
                 sys.exit(1)
             bridge_settings['bridge']['priority'] = dbus.UInt16(stp_priority)
 
+        if multicast_snooping:
+            bridge_settings['bridge']['multicast-snooping'] = dbus.Boolean(
+                                                    multicast_snooping.lower() == 'yes'
+                                                    )
+
         if forward_delay is not None:
+            if not 0 <= forward_delay <= 65535:
+                logging.error("Error: Forward delay must be between 0 and 30.")
+                sys.exit(1)
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
+
+        if vlan_filtering:
+            bridge_settings['bridge']['vlan-filtering'] = dbus.Boolean(
+                                                    vlan_filtering.lower() == 'yes'
+                                                    )
+        if vlan_default_pvid is not None:
+            if not 0 <= vlan_default_pvid <= 4094:
+                logging.error("Error: Port VLAN id must be between 0 and 4094.")
+                sys.exit(1)
+            bridge_settings['bridge']['vlan_default_pvid'] = dbus.UInt16(vlan_default_pvid)
 
         logging.debug("Bridge settings %s", bridge_settings)
 
         try:
-            logging.info("Creating bridge profile %s...", bridge_conn_name)
-            bridge_path = self.settings_interface.AddConnection(bridge_settings)
-            logging.info("Successfully added bridge profile. Path: %s", bridge_path)
+            if dry_run is False:
+                logging.info("Creating bridge profile %s...", bridge_conn_name)
+                bridge_path = self.settings_interface.AddConnection(bridge_settings)
+                logging.info("Successfully added bridge profile. Path: %s", bridge_path)
+            else:
+                logging.info("DRY-RUN: Successfully added bridge profile")
         except dbus.exceptions.DBusException as err:
             logging.error("Error adding bridge connection profile: %s", err)
             return
@@ -276,8 +367,13 @@ class NMManager:
             logging.info("Creating slave profile %s for interface %s...",
                         slave_conn_name, slave_iface
                         )
-            self.settings_interface.AddConnection(slave_settings)
-            logging.info("Successfully enslaved interface to bridge.")
+            if dry_run is False:
+                self.settings_interface.AddConnection(slave_settings)
+                logging.info("Successfully enslaved interface %s to bridge.",
+                             slave_iface)
+            else:
+                logging.info("DRY-RUN: Successfully enslaved interface %s to bridge.",
+                             slave_iface)
         except dbus.exceptions.DBusException as err:
             logging.error("Error adding slave connection profile: %s", err)
             logging.error("Cleaning up bridge profile due to error...")
@@ -490,16 +586,22 @@ class NMManager:
             if not devices_paths:
                 logging.error("No network devices found.")
                 return
+            ifound = False
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
                 iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
                 if interface != iface:
                     continue
+                if interface == iface:
+                    ifound = True
+                    break
+            if ifound is not True:
+                logging.error("No interface: %s", interface)
+                self.list_devices()
+                sys.exit(1)
+            else:
                 return True
-            logging.error("No interface: %s", interface)
-            self.list_devices()
-            sys.exit(1)
         except dbus.exceptions.DBusException as err:
             logging.error("Error getting interface: %s", err)
 
@@ -640,14 +742,26 @@ class InteractiveShell(cmd.Cmd):
         """
         logging.debug("do_add %s", arg_string)
         parser = argparse.ArgumentParser(prog='add', description='Add a new bridge connection.')
-        parser.add_argument('--conn-name', dest='conn_name')
-        parser.add_argument('--bridge-ifname', dest='bridge_ifname')
-        parser.add_argument('--slave-interface', dest='slave_interface')
-        parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false')
-        parser.add_argument('--stp', choices=['yes', 'no'], default='yes')
-        parser.add_argument('--fdelay', type=int, dest='fdelay')
-        parser.add_argument('--stp-priority', type=int, dest='stp_priority')
-
+        parser.add_argument('--conn-name', dest='conn_name', help=help_data['help_conn_name'],
+                            default='c-mybr0')
+        parser.add_argument('--bridge-ifname', dest='bridge_ifname',
+                            help=help_data['help_bridge_ifname'],
+                            default='mybr0')
+        parser.add_argument('--slave-interface', dest='slave_interface',
+                            help=help_data['slave_interface'])
+        parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false',
+                            help=help_data['clone_mac'],)
+        parser.add_argument('--stp', choices=['yes', 'no'], default='yes', help=help_data['stp'])
+        parser.add_argument('--fdelay', type=int, dest='fdelay', help=help_data['fdelay'])
+        parser.add_argument('--stp-priority', type=int, dest='stp_priority',
+                            help=help_data['stp_priority'])
+        parser.add_argument('--multicast-snooping', choices=['yes', 'no'],
+                            default='yes', dest='multicast_snooping',
+                            help=help_data['stp_priority'])
+        parser.add_argument('--vlan-filtering', choices=['yes', 'no'],
+                            default='no', dest='vlan_filtering', help=help_data['vlan_filtering'])
+        parser.add_argument('--vlan-default-pvid', type=int, default=None,
+                    dest='vlan_default_pvid', help=help_data['vlan_default_pvid'])
         try:
             args = parser.parse_args(arg_string.split())
         except SystemExit:
@@ -660,14 +774,6 @@ class InteractiveShell(cmd.Cmd):
                 print("Error: Could not find a suitable default slave interface.")
                 return
 
-        if not args.bridge_ifname:
-            args.bridge_ifname = "mybr0"
-            print(f"No bridge interface name provided. Defaulting to '{args.bridge_ifname}'.")
-
-        if not args.conn_name:
-            args.conn_name = f"c-{args.bridge_ifname}"
-            print(f"No connection name provided. Defaulting to '{args.conn_name}'.")
-
         bridge_config = {
             'conn_name': args.conn_name,
             'bridge_ifname': args.bridge_ifname,
@@ -675,7 +781,10 @@ class InteractiveShell(cmd.Cmd):
             'no_clone_mac': args.no_clone_mac,
             'stp': args.stp,
             'forward_delay': args.fdelay,
-            'stp_priority': args.stp_priority
+            'stp_priority': args.stp_priority,
+            'multicast_snooping': args.multicast_snooping,
+            'vlan_filtering': args.vlan_filtering,
+            'vlan_default_pvid': args.vlan_default_pvid,
         }
         self.manager.add_bridge_connection(bridge_config)
         slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
@@ -690,12 +799,13 @@ class InteractiveShell(cmd.Cmd):
         if last_full_word in ['--slave-interface']:
             candidates = self.manager.get_slave_candidates()
             return [c for c in candidates if c.startswith(text)]
-        if last_full_word == '--stp':
+        if last_full_word in [ '--stp', '--multicast-snooping', '--vlan-filtering']:
             return [s for s in ['yes', 'no'] if s.startswith(text)]
 
         options = [
             '--conn-name', '--bridge-ifname', '--slave-interface', '--stp', 
-            '--fdelay', '--stp-priority', '--no-clone-mac'
+            '--fdelay', '--stp-priority', '--no-clone-mac', '--multicast-snooping',
+            '--vlan-filtering', '--vlan-default-pvid'
         ]
         return [opt for opt in options if opt.startswith(text)]
 
@@ -797,6 +907,19 @@ def is_networkmanager_running():
     stdout, stderr = run_command(rcmd)
     return stdout == "active", stdout + "\n" + stderr
 
+help_data = {
+    'help_conn_name': 'The name for the new bridge connection profile (e.g., my-bridge).',
+    'help_bridge_ifname': 'The name for the bridge network interface (e.g., br0).',
+    'slave_interface': 'The existing physical interface to enslave (e.g., eth0).',
+    'clone_mac': 'Do not set the bridge MAC address to be the same as the slave interface.',
+    'stp': 'Enables or disables Spanning Tree Protocol (STP). Default: yes.',
+    'stp_priority': 'Sets the STP priority (0-65535). Lower is more preferred.',
+    'multicast_snooping': 'Enables or disables IGMP/MLD snooping. Default: yes.',
+    'fdelay': 'Sets the STP forward delay in seconds (0-30).',
+    'vlan_filtering': 'Enables or disables VLAN filtering on the bridge. Default: no',
+    'vlan_default_pvid': 'Sets the default Port VLAN ID (1-4094) for the bridge port itself.',
+}
+
 def main():
     """ The main function """
     manager = NMManager()
@@ -808,47 +931,74 @@ def main():
         '--conn-name',
         dest='conn_name',
         required=False,
-        help='The name for the new bridge connection profile (e.g., my-bridge).'
+        default="c-mybr0",
+        help=help_data['help_conn_name'],
     )
     parser_add_bridge.add_argument(
         '-bn',
         '--bridge-ifname',
         dest='bridge_ifname',
+        default="mybr0",
         required=False,
-        help='The name for the bridge network interface (e.g., br0).'
+        help=help_data['help_bridge_ifname'],
     )
     parser_add_bridge.add_argument(
         '-i',
         '--slave-interface',
         dest='slave_interface',
         required=False,
-        help='The existing physical interface to enslave (e.g., eth0).'
+        help=help_data['slave_interface']
     )
     parser_add_bridge.add_argument(
+        '-ncm',
         '--no-clone-mac',
         dest='clone_mac',
         action='store_false',
-        help='Do not set the bridge MAC address to be the same as the slave interface.'
+        help=help_data['clone_mac']
     )
     parser_add_bridge.add_argument(
         '--stp',
         choices=['yes', 'no'],
         default='yes',
-        help='Enable or disable Spanning Tree Protocol (STP). Default: yes.'
+        help=help_data['stp']
     )
     parser_add_bridge.add_argument(
+        '-sp',
         '--stp-priority',
         type=int,
         default=None,
-        help='Set the STP priority (0-65535). Lower is more preferred.'
+        dest='stp_priority',
+        help=help_data['stp_priority']
+    )
+    parser_add_bridge.add_argument(
+        '-ms',
+        '--multicast-snooping',
+        choices=['yes', 'no'],
+        default='yes',
+        dest='multicast_snooping',
+        help=help_data['multicast_snooping']
     )
     parser_add_bridge.add_argument(
         '--fdelay',
         type=int,
         default=None,
-        help='Set the STP forward delay in seconds (e.g., 15).'
+        help=help_data['fdelay']
     )
-
+    parser_add_bridge.add_argument(
+        '--vlan-filtering',
+        choices=['yes', 'no'],
+        default='no',
+        dest='vlan_filtering',
+        help=help_data['vlan_filtering']
+    )
+    parser_add_bridge.add_argument(
+        '-vdp',
+        '--vlan-default-pvid',
+        type=int,
+        default=None,
+        dest='vlan_default_pvid',
+        help=help_data['vlan_default_pvid']
+    )
     subparsers.add_parser('dev', help='Show all available network devices.')
     subparsers.add_parser('conn', help='Show all connections.')
     subparsers.add_parser('showb', help='Show all current bridges.')
@@ -856,6 +1006,8 @@ def main():
     parser.add_argument('-f', '--force', action='store_true',
                         help='Force adding a bridge (even if one exist already)'
                         )
+    parser.add_argument('-dr', '--dry-run', dest='dry_run',
+                        action='store_true', help='Dont do anything')
     parser_delete = subparsers.add_parser('delete', help='Delete a connection.')
     parser_delete.add_argument('name', help='The name (ID) or UUID of the connection to delete.')
     parser_activate = subparsers.add_parser('activate', help='Activate a connection.')
@@ -868,7 +1020,7 @@ def main():
                                     )
     parser.add_argument('-d', '--debug',
                         action='store_true',
-                        help='Enable debug mode to show all commands executed'
+                        help='Enable debug mode (very verbose...)'
                         )
 
     if len(sys.argv) == 1:
@@ -899,17 +1051,11 @@ def main():
             sys.exit(1)
         else:
             if not args.slave_interface:
-                manager.list_devices()
-            if not args.bridge_ifname:
-                args.bridge_ifname = "mybr0"
-            if not args.slave_interface:
                 args.slave_interface = manager.select_default_slave_interface()
+            manager.check_interface_exist(args.slave_interface)
             if args.slave_interface is None:
                 logging.error("No default interface can be used ... exiting")
                 sys.exit(1)
-            if not args.conn_name:
-                args.conn_name = "c-mybr0"
-                manager.check_interface_exist(args.slave_interface)
             # sounds everything is ok
             bridge_config = {
                 'conn_name': args.conn_name,
@@ -917,11 +1063,17 @@ def main():
                 'slave_interface': args.slave_interface,
                 'clone_mac': args.clone_mac,
                 'stp': args.stp,
-                'fdelay': args.fdelay
+                'stp_priority': args.stp_priority,
+                'fdelay': args.fdelay,
+                'multicast_snooping': args.multicast_snooping,
+                'vlan_filtering': args.vlan_filtering,
+                'vlan_default-pvid': args.vlan_default_pvid,
+                'dry_run': args.dry_run,
             }
             manager.add_bridge_connection(bridge_config)
             slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
-            manager.activate_connection(slave_conn_name)
+            if args.dry_run is False:
+                manager.activate_connection(slave_conn_name)
     if args.command == 'interactive':
         InteractiveShell(manager).cmdloop()
         sys.exit(0)

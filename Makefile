@@ -28,7 +28,7 @@ install:
 	cp -av $(NAME).py $(DESTDIR)$(SBINDIR)/$(NAME)
 
 cleandist:
-	rm -rf $(PACKAGE)-$(VERSION) $(PACKAGE)-$(VERSION).tar.bz2
+	rm -rf $(PACKAGE)-$(VERSION) $(PACKAGE)-$(VERSION).tar.gz
 
 tar:	cleandist clean
 	mkdir $(PACKAGE)-$(VERSION)

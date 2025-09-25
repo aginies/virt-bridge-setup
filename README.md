@@ -32,9 +32,9 @@ options:
   -d, --debug           Enable debug mode to show all commands executed
 
 # virt-bridge-setup.py add --help
-usage: virt-bridge-setup.py add [-h] [-cn CONN_NAME] [-bn BRIDGE_IFNAME] [-i SLAVE_INTERFACE]
-                                [--no-clone-mac] [--stp {yes,no}] [--stp-priority STP_PRIORITY]
-                                [--fdelay FDELAY]
+usage: virt-bridge-setup.py add [-h] [-cn CONN_NAME] [-bn BRIDGE_IFNAME] [-i SLAVE_INTERFACE] [-ncm]
+                                [--stp {yes,no}] [-sp STP_PRIORITY] [-ms {yes,no}] [--fdelay FDELAY]
+                                [--vlan-filtering {yes,no}] [-vdp VLAN_DEFAULT_PVID]
 
 options:
   -h, --help            show this help message and exit
@@ -44,11 +44,17 @@ options:
                         The name for the bridge network interface (e.g., br0).
   -i, --slave-interface SLAVE_INTERFACE
                         The existing physical interface to enslave (e.g., eth0).
-  --no-clone-mac        Do not set the bridge MAC address to be the same as the slave interface.
-  --stp {yes,no}        Enable or disable Spanning Tree Protocol (STP). Default: yes.
-  --stp-priority STP_PRIORITY
-                        Set the STP priority (0-65535). Lower is more preferred.
-  --fdelay FDELAY       Set the STP forward delay in seconds (e.g., 15).
+  -ncm, --no-clone-mac  Do not set the bridge MAC address to be the same as the slave interface.
+  --stp {yes,no}        Enables or disables Spanning Tree Protocol (STP). Default: yes.
+  -sp, --stp-priority STP_PRIORITY
+                        Sets the STP priority (0-65535). Lower is more preferred.
+  -ms, --multicast-snooping {yes,no}
+                        Enables or disables IGMP/MLD snooping. Default: yes.
+  --fdelay FDELAY       Sets the STP forward delay in seconds (0-30).
+  --vlan-filtering {yes,no}
+                        Enables or disables VLAN filtering on the bridge. Default: no
+  -vdp, --vlan-default-pvid VLAN_DEFAULT_PVID
+                        Sets the default Port VLAN ID (1-4094) for the bridge port itself.
 ```
 
 In interactive mode use **[TAB]** key for completion.
@@ -84,6 +90,13 @@ virt-bridge #> show_bridges
   |- UUID:         f02247b5-19f8-XXXXXX-XXXXXXXX
   |- Slave(s):
   │  └─ eth0 (Profile: c-mybr0-port-eth0)
+  |- Bridge Settings:
+  |  |- STP Enabled:   Yes
+  |  |- STP Priority:  None
+  |  |- Forward Delay: None
+  |  |- IGMP snooping: Yes
+  |  |- VLAN Filtering: No (Default)
+  |   - MAC:    C4:EF:BB:A4:EF:E6
   |- IPv4 Config:  (auto)
   |  |- Address: 1X.X.X.XX/24
   |  |- Gateway: 1X.X.X.XX
@@ -91,8 +104,9 @@ virt-bridge #> show_bridges
 _________________________________________
 
 virt-bridge #> add --[TAB]
---bridge-ifname    --fdelay           --slave-interface  --stp-priority     
---conn-name        --no-clone-mac     --stp              
+--bridge-ifname       --multicast-snooping  --stp                 --vlan-filtering
+--conn-name           --no-clone-mac        --stp-priority        
+--fdelay              --slave-interface     --vlan-default-pvid   
 _________________________________________
 
 virt-bridge #> add --slave-interface [TAB]
