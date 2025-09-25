@@ -245,6 +245,7 @@ class NMManager:
         stp_priority = config.get('stp_priority', None)
         clone_mac = config.get('clone_mac', True)
         forward_delay = config.get('forward_delay', None)
+        multicast_snooping = config.get('multicast_snooping', True)
 
         slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
 
@@ -278,6 +279,11 @@ class NMManager:
                 logging.error("Error: STP priority must be between 0 and 65535.")
                 sys.exit(1)
             bridge_settings['bridge']['priority'] = dbus.UInt16(stp_priority)
+
+        if multicast_snooping:
+            bridge_settings['bridge']['multicast-snooping'] = dbus.Boolean(
+                                                    multicast-snooping.lower() == 'yes'
+                                                    )
 
         if forward_delay is not None:
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
@@ -679,6 +685,9 @@ class InteractiveShell(cmd.Cmd):
         parser.add_argument('--stp', choices=['yes', 'no'], default='yes')
         parser.add_argument('--fdelay', type=int, dest='fdelay')
         parser.add_argument('--stp-priority', type=int, dest='stp_priority')
+        parser.add_argument('--multicast-snooping', choices=['yes', 'no'],
+                            default='yes', dest='multicast_snooping'
+                            )
 
         try:
             args = parser.parse_args(arg_string.split())
@@ -707,7 +716,8 @@ class InteractiveShell(cmd.Cmd):
             'no_clone_mac': args.no_clone_mac,
             'stp': args.stp,
             'forward_delay': args.fdelay,
-            'stp_priority': args.stp_priority
+            'stp_priority': args.stp_priority,
+            'multicast_snooping': args.multicast_snooping,
         }
         self.manager.add_bridge_connection(bridge_config)
         slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
@@ -722,12 +732,12 @@ class InteractiveShell(cmd.Cmd):
         if last_full_word in ['--slave-interface']:
             candidates = self.manager.get_slave_candidates()
             return [c for c in candidates if c.startswith(text)]
-        if last_full_word == '--stp':
+        if last_full_word == '--stp' or last_full_word == '--multicast-snooping':
             return [s for s in ['yes', 'no'] if s.startswith(text)]
 
         options = [
             '--conn-name', '--bridge-ifname', '--slave-interface', '--stp', 
-            '--fdelay', '--stp-priority', '--no-clone-mac'
+            '--fdelay', '--stp-priority', '--no-clone-mac', '--multicast-snooping',
         ]
         return [opt for opt in options if opt.startswith(text)]
 
@@ -857,6 +867,7 @@ def main():
         help='The existing physical interface to enslave (e.g., eth0).'
     )
     parser_add_bridge.add_argument(
+        '-ncm',
         '--no-clone-mac',
         dest='clone_mac',
         action='store_false',
@@ -869,10 +880,19 @@ def main():
         help='Enable or disable Spanning Tree Protocol (STP). Default: yes.'
     )
     parser_add_bridge.add_argument(
+        '-sp',
         '--stp-priority',
         type=int,
         default=None,
         help='Set the STP priority (0-65535). Lower is more preferred.'
+    )
+    parser_add_bridge.add_argument(
+        '-ms',
+        '--multicast-snooping',
+        choices=['yes', 'no'],
+        default='yes',
+        dest='multicast_snooping',
+        help='Enables or disables IGMP/MLD snooping. Default yes.'
     )
     parser_add_bridge.add_argument(
         '--fdelay',
@@ -949,7 +969,8 @@ def main():
                 'slave_interface': args.slave_interface,
                 'clone_mac': args.clone_mac,
                 'stp': args.stp,
-                'fdelay': args.fdelay
+                'fdelay': args.fdelay,
+                'multicast_snooping': args.multicast_snooping,
             }
             manager.add_bridge_connection(bridge_config)
             slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
