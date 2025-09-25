@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Thu Sep 25 12:23:03 UTC 2025 - Antoine Ginies <aginies@suse.com>
+
+version 2.4:
+  * add vlan_filtering and vlan_default_pvid options
+  * check forward delay value
+  * add support for multicast-snooping
+  * show more details on bridge config
+
+-------------------------------------------------------------------
 Wed Sep 24 19:54:41 UTC 2025 - Antoine Ginies <aginies@suse.com>
 
 version 2.1:
