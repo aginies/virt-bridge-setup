@@ -67,10 +67,12 @@ class NMManager:
 
     def select_default_slave_interface(self):
         """
-        Select a default slave interface, first ethernet one, if not present wifi
+        Selects a default slave interface, prioritizing active devices with IP addresses.
         """
-        ethernet_candidates = []
-        wifi_candidates = []
+        eth_with_ip = []
+        eth_without_ip = []
+        wifi_with_ip = []
+        wifi_without_ip = []
         try:
             devices_paths = self.nm_interface.GetAllDevices()
             for dev_path in devices_paths:
@@ -78,29 +80,61 @@ class NMManager:
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
                 iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
                 dev_type = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'DeviceType')
+
                 if iface == 'lo' or dev_type == 5:
                     continue
                 ignored_prefixes = ['virbr', 'vnet', 'docker', 'p2p-dev-']
                 if any(iface.startswith(p) for p in ignored_prefixes):
                     continue
+
+                ip4_config_path = prop_interface.Get(
+                                'org.freedesktop.NetworkManager.Device', 'Ip4Config')
+                has_ip = False
+                if ip4_config_path != "/":
+                    ip4_config_proxy = self.bus.get_object(
+                                    'org.freedesktop.NetworkManager', ip4_config_path)
+                    ip4_props_iface = dbus.Interface(ip4_config_proxy,
+                                                     'org.freedesktop.DBus.Properties')
+                    ip4_props = ip4_props_iface.GetAll(
+                                    'org.freedesktop.NetworkManager.IP4Config')
+                    if ip4_props.get('Addresses'):
+                        has_ip = True
+
                 if dev_type == 1:
-                    ethernet_candidates.append(iface)
+                    if has_ip:
+                        eth_with_ip.append(iface)
+                    else:
+                        eth_without_ip.append(iface)
                 elif dev_type == 2:
-                    wifi_candidates.append(iface)
+                    if has_ip:
+                        wifi_with_ip.append(iface)
+                    else:
+                        wifi_without_ip.append(iface)
 
         except dbus.exceptions.DBusException as err:
             logging.error("Error while selecting default interface: %s", err)
             return None
 
-        if ethernet_candidates:
-            ethernet_candidates.sort()
-            slave_interface = ethernet_candidates[0]
+        for candidates in [eth_with_ip, wifi_with_ip, eth_without_ip, wifi_without_ip]:
+            candidates.sort()
+
+        if eth_with_ip:
+            slave_interface = eth_with_ip[0]
+            logging.info("Default slave interface selected: %s (Active Ethernet)", slave_interface)
+            return slave_interface
+
+        if wifi_with_ip:
+            slave_interface = wifi_with_ip[0]
+            logging.info("Default slave interface selected: %s (Active Wi-Fi)", slave_interface)
+            return slave_interface
+
+        if eth_without_ip:
+            slave_interface = eth_without_ip[0]
             logging.info("Default slave interface selected: %s (Ethernet)", slave_interface)
             return slave_interface
 
-        if wifi_candidates:
-            wifi_candidates.sort()
-            slave_interface = wifi_candidates[0]
+        if wifi_without_ip:
+            slave_interface = wifi_without_ip[0]
             logging.info("Default slave interface selected: %s (Wi-Fi)", slave_interface)
             return slave_interface
 
