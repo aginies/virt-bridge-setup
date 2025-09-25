@@ -246,6 +246,8 @@ class NMManager:
         clone_mac = config.get('clone_mac', True)
         forward_delay = config.get('forward_delay', None)
         multicast_snooping = config.get('multicast_snooping', True)
+        vlan_filtering = config.get('vlan_filtering', False)
+        vlan_default_pvid = config.get('vlan_default_pvid', None)
 
         slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
 
@@ -282,7 +284,7 @@ class NMManager:
 
         if multicast_snooping:
             bridge_settings['bridge']['multicast-snooping'] = dbus.Boolean(
-                                                    multicast-snooping.lower() == 'yes'
+                                                    multicast_snooping.lower() == 'yes'
                                                     )
 
         if forward_delay is not None:
@@ -290,6 +292,16 @@ class NMManager:
                 logging.error("Error: Forward delay must be between 0 and 30.")
                 sys.exit(1)
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
+
+        if vlan_filtering:
+            bridge_settings['bridge']['vlan-filtering'] = dbus.Boolean(
+                                                    vlan_filtering.lower() == 'yes'
+                                                    )
+        if vlan_default_pvid is not None:
+            if not 0 <= vlan_default_pvid <= 4094:
+                logging.error("Error: Port VLAN id must be between 0 and 4094.")
+                sys.exit(1)
+            bridge_settings['bridge']['vlan_default_pvid'] = dbus.UInt16(vlan_default_pvid)
 
         logging.debug("Bridge settings %s", bridge_settings)
 
@@ -689,9 +701,11 @@ class InteractiveShell(cmd.Cmd):
         parser.add_argument('--fdelay', type=int, dest='fdelay')
         parser.add_argument('--stp-priority', type=int, dest='stp_priority')
         parser.add_argument('--multicast-snooping', choices=['yes', 'no'],
-                            default='yes', dest='multicast_snooping'
-                            )
-
+                            default='yes', dest='multicast_snooping')
+        parser.add_argument('--vlan-filtering', choices=['yes', 'no'],
+                            default='no', dest='vlan_filtering',)
+        parser.add_argument('--vlan-default-pvid', type=int, default=None,
+                    dest='vlan_default_pvid',)
         try:
             args = parser.parse_args(arg_string.split())
         except SystemExit:
@@ -721,6 +735,8 @@ class InteractiveShell(cmd.Cmd):
             'forward_delay': args.fdelay,
             'stp_priority': args.stp_priority,
             'multicast_snooping': args.multicast_snooping,
+            'vlan_filtering': args.vlan_filtering,
+            'vlan_default_pvid': args.vlan_default_pvid,
         }
         self.manager.add_bridge_connection(bridge_config)
         slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
@@ -735,12 +751,13 @@ class InteractiveShell(cmd.Cmd):
         if last_full_word in ['--slave-interface']:
             candidates = self.manager.get_slave_candidates()
             return [c for c in candidates if c.startswith(text)]
-        if last_full_word == '--stp' or last_full_word == '--multicast-snooping':
+        if last_full_word in [ '--stp', '--multicast-snooping', '--vlan-filtering']:
             return [s for s in ['yes', 'no'] if s.startswith(text)]
 
         options = [
             '--conn-name', '--bridge-ifname', '--slave-interface', '--stp', 
             '--fdelay', '--stp-priority', '--no-clone-mac', '--multicast-snooping',
+            '--vlan-filtering', '--vlan-default-pvid'
         ]
         return [opt for opt in options if opt.startswith(text)]
 
@@ -880,14 +897,14 @@ def main():
         '--stp',
         choices=['yes', 'no'],
         default='yes',
-        help='Enable or disable Spanning Tree Protocol (STP). Default: yes.'
+        help='Enables or disables Spanning Tree Protocol (STP). Default: yes.'
     )
     parser_add_bridge.add_argument(
         '-sp',
         '--stp-priority',
         type=int,
         default=None,
-        help='Set the STP priority (0-65535). Lower is more preferred.'
+        help='Sets the STP priority (0-65535). Lower is more preferred.'
     )
     parser_add_bridge.add_argument(
         '-ms',
@@ -895,15 +912,29 @@ def main():
         choices=['yes', 'no'],
         default='yes',
         dest='multicast_snooping',
-        help='Enables or disables IGMP/MLD snooping. Default yes.'
+        help='Enables or disables IGMP/MLD snooping. Default: yes.'
     )
     parser_add_bridge.add_argument(
         '--fdelay',
         type=int,
         default=None,
-        help='Set the STP forward delay in seconds (0-30).'
+        help='Sets the STP forward delay in seconds (0-30).'
     )
-
+    parser_add_bridge.add_argument(
+        '--vlan-filtering',
+        choices=['yes', 'no'],
+        default='no',
+        dest='vlan_filtering',
+        help='Enables or disables VLAN filtering on the bridge. Default: no'
+    )
+    parser_add_bridge.add_argument(
+        '-vdp',
+        '--vlan-default-pvid',
+        type=int,
+        default=None,
+        dest='vlan_default_pvid',
+        help='Sets the default Port VLAN ID (1-4094) for the bridge port itself.'
+    )
     subparsers.add_parser('dev', help='Show all available network devices.')
     subparsers.add_parser('conn', help='Show all connections.')
     subparsers.add_parser('showb', help='Show all current bridges.')
@@ -974,6 +1005,8 @@ def main():
                 'stp': args.stp,
                 'fdelay': args.fdelay,
                 'multicast_snooping': args.multicast_snooping,
+                'vlan-filtering': args.vlan_filtering,
+                'vlan-default-pvid': args.vlan_default_pvid,
             }
             manager.add_bridge_connection(bridge_config)
             slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
