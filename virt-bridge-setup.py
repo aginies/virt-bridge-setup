@@ -11,7 +11,6 @@ import argparse
 import sys
 import uuid
 import logging
-import subprocess
 import socket
 import struct
 import readline
@@ -299,8 +298,8 @@ class NMManager:
 
         slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
 
-        self.delete_connection(bridge_conn_name, False)
-        self.delete_connection(slave_conn_name, False)
+        self.delete_connection(bridge_conn_name, False, dry_run)
+        self.delete_connection(slave_conn_name, False, dry_run)
 
         bridge_uuid = str(uuid.uuid4())
         bridge_settings = {
@@ -390,8 +389,8 @@ class NMManager:
         except dbus.exceptions.DBusException as err:
             logging.error("Error adding slave connection profile: %s", err)
             logging.error("Cleaning up bridge profile due to error...")
-            self.delete_connection(bridge_conn_name, False)
-            self.delete_connection(slave_conn_name, False)
+            self.delete_connection(bridge_conn_name, False, dry_run)
+            self.delete_connection(slave_conn_name, False, dry_run)
 
     def _get_active_network_config(self, interface_name):
         """
@@ -474,11 +473,14 @@ class NMManager:
                 return path
         return None
 
-    def delete_connection(self, name_or_uuid, show_list):
+    def delete_connection(self, name_or_uuid, show_list, dry_run=False):
         """ Deletes a connection """
         logging.debug("delete_connection %s %s", name_or_uuid, show_list)
         path = self.find_connection(name_or_uuid)
         if path:
+            if dry_run:
+                logging.info("DRY-RUN: Would delete connection %s.", name_or_uuid)
+                return
             try:
                 con_proxy = self.bus.get_object('org.freedesktop.NetworkManager', path)
                 connection = dbus.Interface(
@@ -495,7 +497,7 @@ class NMManager:
                 logging.info("Connection available are:")
                 self.list_connections()
 
-    def activate_connection(self, name_or_uuid):
+    def activate_connection(self, name_or_uuid, dry_run=False):
         """ Activates a connection """
         logging.debug("activate_connection %s", name_or_uuid)
         conn_path = self.find_connection(name_or_uuid)
@@ -506,14 +508,16 @@ class NMManager:
             return
 
         try:
-            logging.info("Activating %s...", name_or_uuid)
-            self.nm_interface.ActivateConnection(conn_path, "/", "/")
-            #sleep(5)
+            if dry_run :
+                logging.info("DRY-RUN: Activating %s...", name_or_uuid)
+            else:
+                logging.info("Activating %s...", name_or_uuid)
+                self.nm_interface.ActivateConnection(conn_path, "/", "/")
             logging.info("Activation command sent for %s. Check status manually.", name_or_uuid)
         except dbus.exceptions.DBusException as err:
             logging.error("Error activating connection: %s", err)
 
-    def deactivate_connection(self, name_or_uuid):
+    def deactivate_connection(self, name_or_uuid, dry_run=False):
         """ Deactivates a connection """
         logging.debug("deactivate_connection %s", name_or_uuid)
         active_connections = self.nm_props_interface.Get(
@@ -548,8 +552,11 @@ class NMManager:
 
         if active_conn_path_to_deactivate:
             try:
-                logging.info("Deactivating %s ...", name_or_uuid)
-                self.nm_interface.DeactivateConnection(active_conn_path_to_deactivate)
+                if dry_run:
+                    logging.info("DRY_RUN: Deactivating %s ...", name_or_uuid)
+                else:
+                    logging.info("Deactivating %s ...", name_or_uuid)
+                    self.nm_interface.DeactivateConnection(active_conn_path_to_deactivate)
                 logging.info("Successfully deactivated %s.", {name_or_uuid})
             except dbus.exceptions.DBusException as err:
                 logging.error("Error deactivating connection: %s", err)
@@ -762,15 +769,15 @@ class InteractiveShell(cmd.Cmd):
                             default='mybr0')
         parser.add_argument('--slave-interface', dest='slave_interface',
                             help=help_data['slave_interface'])
-        parser.add_argument('--no-clone-mac', dest='no_clone_mac', action='store_false',
-                            help=help_data['clone_mac'],)
+        parser.add_argument('--no-clone-mac', dest='clone_mac', action='store_false',
+                            default=True, help=help_data['clone_mac'],)
         parser.add_argument('--stp', choices=['yes', 'no'], default='yes', help=help_data['stp'])
-        parser.add_argument('--fdelay', type=int, dest='fdelay', help=help_data['fdelay'])
+        parser.add_argument('--fdelay', type=int, dest='forward_delay', help=help_data['fdelay'])
         parser.add_argument('--stp-priority', type=int, dest='stp_priority',
                             help=help_data['stp_priority'])
         parser.add_argument('--multicast-snooping', choices=['yes', 'no'],
                             default='yes', dest='multicast_snooping',
-                            help=help_data['stp_priority'])
+                            help=help_data['multicast_snooping'])
         parser.add_argument('--vlan-filtering', choices=['yes', 'no'],
                             default='no', dest='vlan_filtering', help=help_data['vlan_filtering'])
         parser.add_argument('--vlan-default-pvid', type=int, default=None,
@@ -791,9 +798,9 @@ class InteractiveShell(cmd.Cmd):
             'conn_name': args.conn_name,
             'bridge_ifname': args.bridge_ifname,
             'slave_interface': args.slave_interface,
-            'no_clone_mac': args.no_clone_mac,
+            'clone_mac': args.clone_mac,
             'stp': args.stp,
-            'forward_delay': args.fdelay,
+            'forward_delay': args.forward_delay,
             'stp_priority': args.stp_priority,
             'multicast_snooping': args.multicast_snooping,
             'vlan_filtering': args.vlan_filtering,
@@ -851,11 +858,19 @@ class InteractiveShell(cmd.Cmd):
         return self.do_list_bridges(arg)
 
     def do_delete(self, arg):
-        """ Delete a connection by name or UUID. Usage: delete <name|uuid> """
-        if not arg:
+        """
+        Delete a connection by name or UUID.
+        Usage: delete <name|uuid> [--dry-run]
+        """
+        args = arg.split()
+        if not args:
             print("Error: delete requires a connection name or UUID.")
             return
-        self.manager.delete_connection(arg, True)
+
+        name_or_uuid = args[0]
+        dry_run = '--dry-run' in args
+
+        self.manager.delete_connection(name_or_uuid, True, dry_run)
 
     def complete_delete(self, text, _line, _begidx, _endidx):
         """ complete delete command """
@@ -863,10 +878,13 @@ class InteractiveShell(cmd.Cmd):
 
     def do_activate(self, arg):
         """ Activate a connection by name or UUID. Usage: activate <name|uuid> """
-        if not arg:
+        args = arg.split()
+        if not args:
             print("Error: activate requires a connection name or UUID.")
             return
-        self.manager.activate_connection(arg)
+        name_or_uuid = args[0]
+        dry_run = '--dry-run' in args
+        self.manager.activate_connection(name_or_uuid, dry_run)
 
     def complete_activate(self, text, _line, _begidx, _endidx):
         """ Complete activation """
@@ -874,10 +892,13 @@ class InteractiveShell(cmd.Cmd):
 
     def do_deactivate(self, arg):
         """ Deactivate a connection by name or UUID. Usage: activate <name|uuid> """
-        if not arg:
+        args = arg.split()
+        if not args:
             print("Error: deactivate requires a connection name or UUID.")
             return
-        self.manager.deactivate_connection(arg)
+        name_or_uuid = args[0]
+        dry_run = '--dry-run' in args
+        self.manager.deactivate_connection(name_or_uuid, dry_run)
 
     def complete_deactivate(self, text, _line, _begidx, _endidx):
         """ Complete deactivation """
@@ -892,33 +913,6 @@ class InteractiveShell(cmd.Cmd):
         """ Alias for exit """
         return self.do_exit(arg)
 
-
-def run_command(ucmd):
-    """
-    Launch a system command and log it if debug is enabled
-    """
-    logging.debug("run_command %s", ucmd)
-    proc = subprocess.Popen(
-        ucmd, shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True
-    )
-    try:
-        out, errs = proc.communicate(timeout=25)
-        return out.strip(), errs.strip()
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        out, errs = proc.communicate()
-        return "", f"Command timed out: {ucmd}\n{errs}"
-
-def is_networkmanager_running():
-    """
-    Check if NetworkManager is running using systemctl
-    """
-    rcmd = "systemctl is-active NetworkManager"
-    stdout, stderr = run_command(rcmd)
-    return stdout == "active", stdout + "\n" + stderr
 
 help_data = {
     'help_conn_name': 'The name for the new bridge connection profile (e.g., my-bridge).',
@@ -995,6 +989,7 @@ def main():
         '--fdelay',
         type=int,
         default=None,
+        dest='forward_delay',
         help=help_data['fdelay']
     )
     parser_add_bridge.add_argument(
@@ -1046,12 +1041,6 @@ def main():
     else:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    status, output = is_networkmanager_running()
-    if not status:
-        logging.error("NetworkManager is not running. Exiting\nDetails:")
-        logging.error(output)
-        sys.exit(1)
-
     found_bridges = manager.find_existing_bridges()
 
     if args.command == 'add':
@@ -1070,20 +1059,7 @@ def main():
                 logging.error("No default interface can be used ... exiting")
                 sys.exit(1)
             # sounds everything is ok
-            bridge_config = {
-                'conn_name': args.conn_name,
-                'bridge_ifname': args.bridge_ifname,
-                'slave_interface': args.slave_interface,
-                'clone_mac': args.clone_mac,
-                'stp': args.stp,
-                'stp_priority': args.stp_priority,
-                'fdelay': args.fdelay,
-                'multicast_snooping': args.multicast_snooping,
-                'vlan_filtering': args.vlan_filtering,
-                'vlan_default_pvid': args.vlan_default_pvid,
-                'dry_run': args.dry_run,
-            }
-            manager.add_bridge_connection(bridge_config)
+            manager.add_bridge_connection(vars(args))
             slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
             if args.dry_run is False:
                 manager.activate_connection(slave_conn_name)
@@ -1095,11 +1071,11 @@ def main():
     elif args.command == 'conn':
         manager.list_connections()
     elif args.command == 'delete':
-        manager.delete_connection(args.name, True)
+        manager.delete_connection(args.name, True, args.dry_run)
     elif args.command == 'activate':
-        manager.activate_connection(args.name)
+        manager.activate_connection(args.name, args.dry_run)
     elif args.command == 'deactivate':
-        manager.deactivate_connection(args.name)
+        manager.deactivate_connection(args.name, args.dry_run)
     elif args.command == 'showb':
         if not found_bridges:
             logging.info("No existing bridge connections found.")
