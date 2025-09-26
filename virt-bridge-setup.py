@@ -168,6 +168,7 @@ class NMManager:
         Finds all existing NetworkManager connections of type 'bridge'.
         """
         logging.debug("find_existing_bridges")
+        # First, get all connection configurations
         all_connections_config = []
         connections_paths = self.settings_interface.ListConnections()
         for path in connections_paths:
@@ -178,60 +179,72 @@ class NMManager:
             )
             all_connections_config.append(settings_connection.GetSettings())
 
-        bridges = []
+        # Process all connections in one pass
+        bridges_by_uuid = {}
+        slaves_by_master_uuid = {}
+
         for config in all_connections_config:
-            if config.get('connection', {}).get('type') == "bridge":
+            conn_settings = config.get('connection', {})
+            conn_type = conn_settings.get('type')
+            conn_uuid = conn_settings.get('uuid')
+
+            if conn_type == "bridge":
+                if not conn_uuid:
+                    continue
                 bridge_details = {
-                    'id': config['connection'].get('id', 'N/A'),
-                    'uuid': config['connection'].get('uuid', 'N/A'),
-                    'interface-name': config['connection'].get('interface-name', 'N/A'),
+                    'id': conn_settings.get('id', 'N/A'),
+                    'uuid': conn_uuid,
+                    'interface-name': conn_settings.get('interface-name', 'N/A'),
                     'slaves': [],
                     'ipv4': {},
                     'bridge_settings': {},
                 }
+
                 ipv4_config = config.get('ipv4', {})
                 bridge_details['ipv4']['method'] = ipv4_config.get('method', 'disabled')
                 bridge_details['ipv4']['addresses'] = [
-                        f"{addr[0]}/{addr[1]}"
-                        for addr in ipv4_config.get('addresses', [])
-                        ]
+                    f"{addr[0]}/{addr[1]}" for addr in ipv4_config.get('addresses', [])
+                ]
                 bridge_details['ipv4']['gateway'] = ipv4_config.get('gateway', None)
                 bridge_details['ipv4']['dns'] = [str(d) for d in ipv4_config.get('dns', [])]
+
                 bridge_config = config.get('bridge', {})
                 mac_bytes = bridge_config.get('mac-address')
-                mac_str = 'Not set' if not mac_bytes else ':'.join(f'{b:02X}' for b in mac_bytes)
-                forward_delay_v = bridge_config.get('forward-delay')
-                priority_v = bridge_config.get('priority')
-                priority_str = priority_v if priority_v is int else None
                 vlan_setting = bridge_config.get('vlan-filtering')
-                vlan_str = 'Yes' if vlan_setting is True else (
-                        'No' if vlan_setting is False else 'No (Default)'
-                        )
-                forward_delay_str = forward_delay_v if forward_delay_v is int else None
+
                 bridge_details['bridge_settings'] = {
                     'stp': 'Yes' if bridge_config.get('stp', True) else 'No',
-                    'priority': priority_str,
-                    'forward-delay': forward_delay_str,
+                    'priority': bridge_config.get('priority'),
+                    'forward-delay': bridge_config.get('forward-delay'),
                     'multicast-snooping': 'Yes' if bridge_config.get(
-                                                    'multicast-snooping', True
-                                                    ) else 'No',
-                    'mac-address': mac_str,
-                    'vlan-filtering': vlan_str,
+                            'multicast-snooping', True
+                            ) else 'No',
+                    'mac-address': ':'.join(
+                            f'{b:02X}' for b in mac_bytes
+                            ) if mac_bytes else 'Not set',
+                    'vlan-filtering': 'Yes' if vlan_setting else 'No',
                     'vlan-default-pvid': bridge_config.get('vlan-default-pvid')
                 }
-                bridges.append(bridge_details)
+                bridges_by_uuid[conn_uuid] = bridge_details
 
-        for bridge in bridges:
-            for config in all_connections_config:
-                conn_settings = config.get('connection', {})
-                if (conn_settings.get('slave-type') == 'bridge' and
-                    conn_settings.get('master') == bridge['uuid']):
-                    slave_details = {
-                        'iface': conn_settings.get('interface-name', 'Unknown'),
-                        'conn_id': conn_settings.get('id', 'Unknown Profile')
-                    }
-                    bridge['slaves'].append(slave_details)
-        return bridges
+            elif conn_settings.get('slave-type') == 'bridge':
+                master_uuid = conn_settings.get('master')
+                if not master_uuid:
+                    continue
+                slave_details = {
+                    'iface': conn_settings.get('interface-name', 'Unknown'),
+                    'conn_id': conn_settings.get('id', 'Unknown Profile')
+                }
+                if master_uuid not in slaves_by_master_uuid:
+                    slaves_by_master_uuid[master_uuid] = []
+                slaves_by_master_uuid[master_uuid].append(slave_details)
+
+        # Combine bridges with their slaves
+        for suuid, bridge in bridges_by_uuid.items():
+            if suuid in slaves_by_master_uuid:
+                bridge['slaves'] = slaves_by_master_uuid[suuid]
+
+        return list(bridges_by_uuid.values())
 
     def show_existing_bridges(self, found_bridges):
         """ Human readable form """
@@ -1067,7 +1080,7 @@ def main():
                 'fdelay': args.fdelay,
                 'multicast_snooping': args.multicast_snooping,
                 'vlan_filtering': args.vlan_filtering,
-                'vlan_default-pvid': args.vlan_default_pvid,
+                'vlan_default_pvid': args.vlan_default_pvid,
                 'dry_run': args.dry_run,
             }
             manager.add_bridge_connection(bridge_config)
