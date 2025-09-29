@@ -138,12 +138,36 @@ class NMManager:
         candidates.sort()
         return candidates
 
+    def _extract_bridge_settings(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Extracts bridge-specific settings from a connection configuration."""
+        bridge_config = config.get('bridge', {})
+        mac_bytes = bridge_config.get('mac-address')
+        vlan_setting = bridge_config.get('vlan-filtering')
+        return {
+            'stp': 'Yes' if bridge_config.get('stp', True) else 'No',
+            'priority': bridge_config.get('priority'),
+            'forward-delay': bridge_config.get('forward-delay'),
+            'multicast-snooping': 'Yes' if bridge_config.get('multicast-snooping', True) else 'No',
+            'mac-address': ':'.join(f'{b:02X}' for b in mac_bytes) if mac_bytes else 'Not set',
+            'vlan-filtering': 'Yes' if vlan_setting else 'No',
+            'vlan-default-pvid': bridge_config.get('vlan-default-pvid')
+        }
+
+    def _extract_ipv4_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Extracts IPv4 configuration from a connection configuration."""
+        ipv4_config = config.get('ipv4', {})
+        return {
+            'method': ipv4_config.get('method', 'disabled'),
+            'addresses': [f"{addr[0]}/{addr[1]}" for addr in ipv4_config.get('addresses', [])],
+            'gateway': ipv4_config.get('gateway', None),
+            'dns': [str(d) for d in ipv4_config.get('dns', [])]
+        }
+
     def find_existing_bridges(self) -> List[Dict[str, Any]]:
         """
         Finds all existing NetworkManager connections of type 'bridge'.
         """
         logging.debug("find_existing_bridges")
-        # First, get all connection configurations
         all_connections_config = []
         connections_paths = self.settings_interface.ListConnections()
         for path in connections_paths:
@@ -154,7 +178,6 @@ class NMManager:
             )
             all_connections_config.append(settings_connection.GetSettings())
 
-        # Process all connections in one pass
         bridges_by_uuid = {}
         slaves_by_master_uuid: Dict[str, List[Dict[str, str]]] = {}
 
@@ -163,49 +186,17 @@ class NMManager:
             conn_type = conn_settings.get('type')
             conn_uuid = conn_settings.get('uuid')
 
-            if conn_type == "bridge":
-                if not conn_uuid:
-                    continue
-                bridge_details = {
+            if conn_type == "bridge" and conn_uuid:
+                bridges_by_uuid[conn_uuid] = {
                     'id': conn_settings.get('id', 'N/A'),
                     'uuid': conn_uuid,
                     'interface-name': conn_settings.get('interface-name', 'N/A'),
                     'slaves': [],
-                    'ipv4': {},
-                    'bridge_settings': {},
+                    'ipv4': self._extract_ipv4_config(config),
+                    'bridge_settings': self._extract_bridge_settings(config),
                 }
-
-                ipv4_config = config.get('ipv4', {})
-                bridge_details['ipv4']['method'] = ipv4_config.get('method', 'disabled')
-                bridge_details['ipv4']['addresses'] = [
-                    f"{addr[0]}/{addr[1]}" for addr in ipv4_config.get('addresses', [])
-                ]
-                bridge_details['ipv4']['gateway'] = ipv4_config.get('gateway', None)
-                bridge_details['ipv4']['dns'] = [str(d) for d in ipv4_config.get('dns', [])]
-
-                bridge_config = config.get('bridge', {})
-                mac_bytes = bridge_config.get('mac-address')
-                vlan_setting = bridge_config.get('vlan-filtering')
-
-                bridge_details['bridge_settings'] = {
-                    'stp': 'Yes' if bridge_config.get('stp', True) else 'No',
-                    'priority': bridge_config.get('priority'),
-                    'forward-delay': bridge_config.get('forward-delay'),
-                    'multicast-snooping': 'Yes' if bridge_config.get(
-                            'multicast-snooping', True
-                            ) else 'No',
-                    'mac-address': ':'.join(
-                            f'{b:02X}' for b in mac_bytes
-                            ) if mac_bytes else 'Not set',
-                    'vlan-filtering': 'Yes' if vlan_setting else 'No',
-                    'vlan-default-pvid': bridge_config.get('vlan-default-pvid')
-                }
-                bridges_by_uuid[conn_uuid] = bridge_details
-
-            elif conn_settings.get('slave-type') == 'bridge':
+            elif conn_settings.get('slave-type') == 'bridge' and conn_settings.get('master'):
                 master_uuid = conn_settings.get('master')
-                if not master_uuid:
-                    continue
                 slave_details = {
                     'iface': conn_settings.get('interface-name', 'Unknown'),
                     'conn_id': conn_settings.get('id', 'Unknown Profile')
@@ -214,7 +205,6 @@ class NMManager:
                     slaves_by_master_uuid[master_uuid] = []
                 slaves_by_master_uuid[master_uuid].append(slave_details)
 
-        # Combine bridges with their slaves
         for suuid, bridge in bridges_by_uuid.items():
             if suuid in slaves_by_master_uuid:
                 bridge['slaves'] = slaves_by_master_uuid[suuid]
