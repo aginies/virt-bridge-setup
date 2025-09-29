@@ -16,12 +16,33 @@ import struct
 import readline
 import cmd
 from typing import Any, Dict, List, Optional
-import dbus # type: ignore
+import dbus  # type: ignore
+
+# Device types mapping
+DEV_TYPES: Dict[int, str] = {
+    0: "Unknown", 1: "Ethernet", 2: "Wi-Fi", 3: "WWAN", 4: "OLPC Mesh",
+    5: "Bridge", 6: "Bluetooth", 7: "WiMAX", 8: "Modem", 9: "TUN",
+    10: "InfiniBand", 11: "Bond", 12: "VLAN", 13: "ADSL", 14: "Team",
+    15: "Generic", 16: "Veth", 17: "MACVLAN", 18: "OVS Port",
+    19: "OVS Interface", 20: "Dummy", 21: "MACsec", 22: "IPVLAN",
+    23: "OVS Bridge", 24: "IP Tunnel", 25: "Loopback", 26: "6LoWPAN",
+    27: "HSR", 28: "Wi-Fi P2P", 29: "VRF", 30: "WireGuard",
+    31: "WPAN", 32: "VPRP",
+}
+
+# Device states mapping
+DEV_STATES: Dict[int, str] = {
+    10: "Unmanaged", 20: "Unavailable", 30: "Disconnected", 40: "Prepare",
+    50: "Config", 60: "Need Auth", 70: "IP Config", 80: "IP Check",
+    90: "Secondaries", 100: "Activated", 110: "Deactivating", 120: "Failed",
+}
+
 
 class NMManager:
     """
     A class to manage NetworkManager via D-Bus.
     """
+
     def __init__(self) -> None:
         try:
             self.bus: dbus.SystemBus = dbus.SystemBus()
@@ -45,21 +66,6 @@ class NMManager:
                 self.settings_proxy,
                 'org.freedesktop.NetworkManager.Settings'
             )
-            self.dev_types: dict[int, str] = {
-                0: "Unknown", 1: "Ethernet", 2: "Wi-Fi", 3: "WWAN", 4: "OLPC Mesh",
-                5: "Bridge", 6: "Bluetooth", 7: "WiMAX", 8: "Modem", 9: "TUN",
-                10: "InfiniBand", 11: "Bond", 12: "VLAN", 13: "ADSL", 14: "Team",
-                15: "Generic", 16: "Veth", 17: "MACVLAN", 18: "OVS Port",
-                19: "OVS Interface", 20: "Dummy", 21: "MACsec", 22: "IPVLAN",
-                23: "OVS Bridge", 24: "IP Tunnel", 25: "Loopback", 26: "6LoWPAN",
-                27: "HSR", 28: "Wi-Fi P2P", 29: "VRF", 30: "WireGuard",
-                31: "WPAN", 32: "VPRP",
-            }
-            self.dev_states: dict[int, str] = {
-                10: "Unmanaged", 20: "Unavailable", 30: "Disconnected", 40: "Prepare",
-                50: "Config", 60: "Need Auth", 70: "IP Config", 80: "IP Check",
-                90: "Secondaries", 100: "Activated", 110: "Deactivating", 120: "Failed",
-            }
         except dbus.exceptions.DBusException as err:
             logging.error("Error connecting to D-Bus: %s", err)
             logging.error("Please ensure NetworkManager is running.")
@@ -723,8 +729,8 @@ class NMManager:
                                             )
                     settings = settings_iface.GetSettings()
                     conn_name = settings['connection']['id']
-                dev_type_str = self.dev_types.get(dev_type_num, f"Unknown ({dev_type_num})")
-                dev_state_str = self.dev_states.get(dev_state_num, f"Unknown ({dev_state_num})")
+                dev_type_str = DEV_TYPES.get(dev_type_num, f"Unknown ({dev_type_num})")
+                dev_state_str = DEV_STATES.get(dev_state_num, f"Unknown ({dev_state_num})")
                 print(
                     f"{iface:<15} "
                     f"{dev_type_str:<12} "
