@@ -520,7 +520,7 @@ class NMManager:
     def deactivate_connection(self, name_or_uuid: str, dry_run: bool = False) -> None:
         """ Deactivates a connection """
         logging.debug("deactivate_connection %s", name_or_uuid)
-        active_connections = self.nm_interface.Get(
+        active_connections = self.nm_props_interface.Get(
             'org.freedesktop.NetworkManager',
             'ActiveConnections'
         )
