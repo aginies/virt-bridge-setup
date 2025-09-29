@@ -15,36 +15,37 @@ import socket
 import struct
 import readline
 import cmd
-import dbus
+from typing import Any, Dict, List, Optional
+import dbus # type: ignore
 
 class NMManager:
     """
     A class to manage NetworkManager via D-Bus.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         try:
-            self.bus = dbus.SystemBus()
-            self.nm_proxy = self.bus.get_object(
+            self.bus: dbus.SystemBus = dbus.SystemBus()
+            self.nm_proxy: dbus.proxies = self.bus.get_object(
                 'org.freedesktop.NetworkManager',
                 '/org/freedesktop/NetworkManager'
             )
-            self.nm_interface = dbus.Interface(
+            self.nm_interface: dbus.proxies.Interface = dbus.Interface(
                 self.nm_proxy,
                 'org.freedesktop.NetworkManager'
             )
-            self.nm_props_interface = dbus.Interface(
+            self.nm_props_interface: dbus.proxies.Interface = dbus.Interface(
                 self.nm_proxy,
                 'org.freedesktop.DBus.Properties'
             )
-            self.settings_proxy = self.bus.get_object(
+            self.settings_proxy: dbus.proxies = self.bus.get_object(
                 'org.freedesktop.NetworkManager',
                 '/org/freedesktop/NetworkManager/Settings'
             )
-            self.settings_interface = dbus.Interface(
+            self.settings_interface: dbus.proxies.Interface = dbus.Interface(
                 self.settings_proxy,
                 'org.freedesktop.NetworkManager.Settings'
             )
-            self.dev_types = {
+            self.dev_types: dict[int, str] = {
                 0: "Unknown", 1: "Ethernet", 2: "Wi-Fi", 3: "WWAN", 4: "OLPC Mesh",
                 5: "Bridge", 6: "Bluetooth", 7: "WiMAX", 8: "Modem", 9: "TUN",
                 10: "InfiniBand", 11: "Bond", 12: "VLAN", 13: "ADSL", 14: "Team",
@@ -54,7 +55,7 @@ class NMManager:
                 27: "HSR", 28: "Wi-Fi P2P", 29: "VRF", 30: "WireGuard",
                 31: "WPAN", 32: "VPRP",
             }
-            self.dev_states = {
+            self.dev_states: dict[int, str] = {
                 10: "Unmanaged", 20: "Unavailable", 30: "Disconnected", 40: "Prepare",
                 50: "Config", 60: "Need Auth", 70: "IP Config", 80: "IP Check",
                 90: "Secondaries", 100: "Activated", 110: "Deactivating", 120: "Failed",
@@ -63,8 +64,7 @@ class NMManager:
             logging.error("Error connecting to D-Bus: %s", err)
             logging.error("Please ensure NetworkManager is running.")
             sys.exit(1)
-
-    def select_default_slave_interface(self):
+    def select_default_slave_interface(self) -> Optional[str]:
         """
         Selects a default slave interface, prioritizing active devices with IP addresses.
         """
@@ -140,9 +140,9 @@ class NMManager:
         logging.warning("No suitable default slave interface was found.")
         return None
 
-    def get_slave_candidates(self):
+    def get_slave_candidates(self) -> List[str]:
         """ Returns a list of all potential slave interfaces (Ethernet, Wi-Fi) """
-        candidates = []
+        candidates: List[str] = []
         try:
             devices_paths = self.nm_interface.GetAllDevices()
             for dev_path in devices_paths:
@@ -162,7 +162,7 @@ class NMManager:
         candidates.sort()
         return candidates
 
-    def find_existing_bridges(self):
+    def find_existing_bridges(self) -> List[Dict[str, Any]]:
         """
         Finds all existing NetworkManager connections of type 'bridge'.
         """
@@ -180,7 +180,7 @@ class NMManager:
 
         # Process all connections in one pass
         bridges_by_uuid = {}
-        slaves_by_master_uuid = {}
+        slaves_by_master_uuid: Dict[str, List[Dict[str, str]]] = {}
 
         for config in all_connections_config:
             conn_settings = config.get('connection', {})
@@ -245,7 +245,7 @@ class NMManager:
 
         return list(bridges_by_uuid.values())
 
-    def show_existing_bridges(self, found_bridges):
+    def show_existing_bridges(self, found_bridges: List[Dict[str, Any]]) -> None:
         """ Human readable form """
         logging.debug("show_existing_bridges %s", found_bridges)
         count = len(found_bridges)
@@ -281,7 +281,7 @@ class NMManager:
             if i < count - 1:
                 print("")
 
-    def add_bridge_connection(self, config):
+    def add_bridge_connection(self, config: Dict[str, Any]) -> None:
         """ Creates a bridge and enslaves a physical interface to it """
         logging.debug("add_bridge_connection %s", config)
         bridge_conn_name = config['conn_name']
@@ -392,7 +392,7 @@ class NMManager:
             self.delete_connection(bridge_conn_name, False, dry_run)
             self.delete_connection(slave_conn_name, False, dry_run)
 
-    def _get_active_network_config(self, interface_name):
+    def _get_active_network_config(self, interface_name: str) -> Optional[Dict[str, Any]]:
         """
         For a given interface name, finds the active device and returns its live network config.
         """
@@ -437,7 +437,7 @@ class NMManager:
         except dbus.exceptions.DBusException:
             return None
 
-    def _get_mac_address(self, iface_name):
+    def _get_mac_address(self, iface_name: str) -> Optional[str]:
         """ Helper to get the MAC address for a given interface name """
         logging.debug("_get_mac_address %s", iface_name)
         devices = self.nm_interface.GetAllDevices()
@@ -455,7 +455,7 @@ class NMManager:
         logging.warning("Warning: Could not find MAC address for interface %s.", iface_name)
         return None
 
-    def find_connection(self, name_or_uuid):
+    def find_connection(self, name_or_uuid: str) -> Optional[str]:
         """ Finds a connection by its name (ID) or UUID """
         logging.debug("find_connection %s", name_or_uuid)
         connections = self.settings_interface.ListConnections()
@@ -473,7 +473,7 @@ class NMManager:
                 return path
         return None
 
-    def delete_connection(self, name_or_uuid, show_list, dry_run=False):
+    def delete_connection(self, name_or_uuid: str, show_list: bool, dry_run: bool = False) -> None:
         """ Deletes a connection """
         logging.debug("delete_connection %s %s", name_or_uuid, show_list)
         path = self.find_connection(name_or_uuid)
@@ -497,7 +497,7 @@ class NMManager:
                 logging.info("Connection available are:")
                 self.list_connections()
 
-    def activate_connection(self, name_or_uuid, dry_run=False):
+    def activate_connection(self, name_or_uuid: str, dry_run: bool = False) -> None:
         """ Activates a connection """
         logging.debug("activate_connection %s", name_or_uuid)
         conn_path = self.find_connection(name_or_uuid)
@@ -517,10 +517,10 @@ class NMManager:
         except dbus.exceptions.DBusException as err:
             logging.error("Error activating connection: %s", err)
 
-    def deactivate_connection(self, name_or_uuid, dry_run=False):
+    def deactivate_connection(self, name_or_uuid: str, dry_run: bool = False) -> None:
         """ Deactivates a connection """
         logging.debug("deactivate_connection %s", name_or_uuid)
-        active_connections = self.nm_props_interface.Get(
+        active_connections = self.nm_interface.Get(
             'org.freedesktop.NetworkManager',
             'ActiveConnections'
         )
@@ -565,7 +565,7 @@ class NMManager:
             logging.info("Connection available are:")
             self.list_connections()
 
-    def list_connections(self):
+    def list_connections(self) -> List[Dict[str, Any]]:
         """
         Retrieves details for all saved NetworkManager connections
         """
@@ -598,36 +598,33 @@ class NMManager:
                   )
         return all_connections
 
-    def check_interface_exist(self, interface):
-        """ Check a interface exist """
+    def check_interface_exist(self, interface: str) -> Optional[bool]:
+        """Check if an interface exists."""
         logging.debug("check_interface_exist %s", interface)
         try:
             devices_paths = self.nm_interface.GetAllDevices()
             if not devices_paths:
                 logging.error("No network devices found.")
-                return
-            ifound = False
+                return False
+
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
                 iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
-                if interface != iface:
-                    continue
                 if interface == iface:
-                    ifound = True
-                    break
-            if ifound is not True:
-                logging.error("No interface: %s", interface)
-                self.list_devices()
-                sys.exit(1)
-            else:
-                return True
+                    return True # Found it!
+
+            logging.error("No interface: %s", interface)
+            self.list_devices()
+            return False
+
         except dbus.exceptions.DBusException as err:
             logging.error("Error getting interface: %s", err)
+            return None
 
-    def get_all_connection_identifiers(self):
+    def get_all_connection_identifiers(self) -> List[str]:
         """Returns a flat list of all connection IDs and UUIDs for completion."""
-        identifiers = []
+        identifiers: List[str] = []
         connections = self.list_connections.__wrapped__(self) if hasattr(
             self.list_connections, '__wrapped__'
             ) else self.list_connections()
@@ -636,7 +633,7 @@ class NMManager:
             identifiers.append(conn['uuid'])
         return identifiers
 
-    def list_devices(self):
+    def list_devices(self) -> None:
         """
         Lists all available network devices and their properties in a table
         """
@@ -746,7 +743,7 @@ class InteractiveShell(cmd.Cmd):
     promptline = '_________________________________________\n'
     prompt = promptline + "virt-bridge #> "
 
-    def __init__(self, manager):
+    def __init__(self, manager: 'NMManager') -> None:
         super().__init__()
         self.manager = manager
         try:
@@ -756,7 +753,7 @@ class InteractiveShell(cmd.Cmd):
         except ImportError:
             pass
 
-    def do_add(self, arg_string):
+    def do_add(self, arg_string: str) -> None:
         """
         Adds a new bridge connection with specified options
         """
@@ -810,7 +807,7 @@ class InteractiveShell(cmd.Cmd):
         slave_conn_name = f"{args.conn_name}-port-{args.slave_interface}"
         self.manager.activate_connection(slave_conn_name)
 
-    def complete_add(self, text, line, begidx, _endidx):
+    def complete_add(self, text: str, line: str, begidx: int, _endidx: int) -> List[str]:
         """ Provides context-aware auto-completion for the 'add' command """
         words_before_cursor = line[:begidx].split()
         if not words_before_cursor:
@@ -829,23 +826,23 @@ class InteractiveShell(cmd.Cmd):
         ]
         return [opt for opt in options if opt.startswith(text)]
 
-    def do_list_devices(self, _):
+    def do_list_devices(self, _: str) -> None:
         """ List all available network devices. Alias: dev """
         self.manager.list_devices()
 
-    def do_dev(self, arg):
+    def do_dev(self, arg: str) -> None:
         """Alias for list_devices."""
         return self.do_list_devices(arg)
 
-    def do_list_connections(self, _):
+    def do_list_connections(self, _: str) -> None:
         """ List all saved connection profiles. Alias: conn """
         self.manager.list_connections()
 
-    def do_conn(self, arg):
+    def do_conn(self, arg: str) -> None:
         """ Alias for list_connections """
         return self.do_list_connections(arg)
 
-    def do_list_bridges(self, _):
+    def do_list_bridges(self, _: str) -> None:
         """ Find and list all configured bridge connections. Alias: showb """
         found_bridges = self.manager.find_existing_bridges()
         if not found_bridges:
@@ -853,11 +850,11 @@ class InteractiveShell(cmd.Cmd):
         else:
             self.manager.show_existing_bridges(found_bridges)
 
-    def do_show_bridges(self, arg):
+    def do_show_bridges(self, arg: str) -> None:
         """ Alias for list_bridges """
         return self.do_list_bridges(arg)
 
-    def do_delete(self, arg):
+    def do_delete(self, arg: str) -> None:
         """
         Delete a connection by name or UUID.
         Usage: delete <name|uuid> [--dry-run]
@@ -872,11 +869,11 @@ class InteractiveShell(cmd.Cmd):
 
         self.manager.delete_connection(name_or_uuid, True, dry_run)
 
-    def complete_delete(self, text, _line, _begidx, _endidx):
+    def complete_delete(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ complete delete command """
         return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
 
-    def do_activate(self, arg):
+    def do_activate(self, arg: str) -> None:
         """ Activate a connection by name or UUID. Usage: activate <name|uuid> """
         args = arg.split()
         if not args:
@@ -886,11 +883,11 @@ class InteractiveShell(cmd.Cmd):
         dry_run = '--dry-run' in args
         self.manager.activate_connection(name_or_uuid, dry_run)
 
-    def complete_activate(self, text, _line, _begidx, _endidx):
+    def complete_activate(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ Complete activation """
         return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
 
-    def do_deactivate(self, arg):
+    def do_deactivate(self, arg: str) -> None:
         """ Deactivate a connection by name or UUID. Usage: activate <name|uuid> """
         args = arg.split()
         if not args:
@@ -900,16 +897,16 @@ class InteractiveShell(cmd.Cmd):
         dry_run = '--dry-run' in args
         self.manager.deactivate_connection(name_or_uuid, dry_run)
 
-    def complete_deactivate(self, text, _line, _begidx, _endidx):
+    def complete_deactivate(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ Complete deactivation """
         return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
 
-    def do_exit(self, _):
+    def do_exit(self, _: str) -> bool:
         """ Exit the interactive shell. Alias: quit """
         print("Goodbye!")
         return True
 
-    def do_quit(self, arg):
+    def do_quit(self, arg: str) -> bool:
         """ Alias for exit """
         return self.do_exit(arg)
 
