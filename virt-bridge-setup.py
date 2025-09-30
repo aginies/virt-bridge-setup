@@ -81,6 +81,9 @@ class NMManager:
 
         try:
             devices_paths = self.nm_interface.GetAllDevices()
+            if not devices_paths:
+                logging.warning("No network devices found.")
+                return None
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
@@ -314,7 +317,7 @@ class NMManager:
             if not 0 <= vlan_default_pvid <= 4094:
                 logging.error("Error: Port VLAN id must be between 0 and 4094.")
                 sys.exit(1)
-            bridge_settings['bridge']['vlan_default_pvid'] = dbus.UInt16(vlan_default_pvid)
+            bridge_settings['bridge']['vlan-default-pvid'] = dbus.UInt16(vlan_default_pvid)
 
         logging.debug("Bridge settings %s", bridge_settings)
 
