@@ -5,60 +5,72 @@ This was originally created to replace the automatic **yast2 virtualization** br
 This is a simple script which doesnt aim to support all network scenarios, for complex task please setup the bridge manually. Its preferable to run the script just after the installation, not after any network customisation. 
 The script provides an **interactive mode** with **completion**.
 
-## Command options
+## Features
 
+*   Create and manage bridge interfaces.
+*   Command-line and interactive modes.
+*   **Automatic slave interface selection**: If no slave interface is provided, the script will automatically select the best candidate (prioritizing active Ethernet, then active Wi-Fi).
+*   Tab completion for commands and options in the interactive mode.
+*   Support for various bridge options, including STP, VLAN, and more.
+*   `--dry-run` mode to see what commands would be executed without making any changes.
+
+## Prerequisites
+
+- Python 3.x
+- Python-dbus
+- NetworkManager installed on the system
+
+## Installation
+
+Clone the repository:
 ```bash
-# virt-bridge-setup.py
-usage: virt-bridge-setup.py [-h] [-f] [-d]
-                            {add,dev,conn,showb,interactive,delete,activate,deactivate} ...
-
-Manage Bridge connections.
-
-positional arguments:
-  {add,dev,conn,showb,interactive,delete,activate,deactivate}
-                        Available commands
-    add                 Add a new bridge connection.
-    dev                 Show all available network devices.
-    conn                Show all connections.
-    showb               Show all current bridges.
-    interactive         Start an interactive shell session.
-    delete              Delete a connection.
-    activate            Activate a connection.
-    deactivate          Deactivate a connection.
-
-options:
-  -h, --help            show this help message and exit
-  -f, --force           Force adding a bridge (even if one exist already)
-  -dr, --dry-run        Dont do anything
-  -d, --debug           Enable debug mode to show all commands executed
-
-# virt-bridge-setup.py add --help
-usage: virt-bridge-setup.py add [-h] [-cn CONN_NAME] [-bn BRIDGE_IFNAME] [-i SLAVE_INTERFACE] [-ncm]
-                                [--stp {yes,no}] [-sp STP_PRIORITY] [-ms {yes,no}] [--fdelay FDELAY]
-                                [--vlan-filtering {yes,no}] [-vdp VLAN_DEFAULT_PVID]
-
-options:
-  -h, --help            show this help message and exit
-  -cn, --conn-name CONN_NAME
-                        The name for the new bridge connection profile (e.g., my-bridge).
-  -bn, --bridge-ifname BRIDGE_IFNAME
-                        The name for the bridge network interface (e.g., br0).
-  -i, --slave-interface SLAVE_INTERFACE
-                        The existing physical interface to enslave (e.g., eth0).
-  -ncm, --no-clone-mac  Do not set the bridge MAC address to be the same as the slave interface.
-  --stp {yes,no}        Enables or disables Spanning Tree Protocol (STP). Default: yes.
-  -sp, --stp-priority STP_PRIORITY
-                        Sets the STP priority (0-65535). Lower is more preferred.
-  -ms, --multicast-snooping {yes,no}
-                        Enables or disables IGMP/MLD snooping. Default: yes.
-  --fdelay FDELAY       Sets the STP forward delay in seconds (0-30).
-  --vlan-filtering {yes,no}
-                        Enables or disables VLAN filtering on the bridge. Default: no
-  -vdp, --vlan-default-pvid VLAN_DEFAULT_PVID
-                        Sets the default Port VLAN ID (1-4094) for the bridge port itself.
+git clone https://github.com/aginies/virt-bridge-setup.git
 ```
 
-In interactive mode use **[TAB]** key for completion.
+## Usage
+
+### Global Options
+
+| Option | Description |
+| --- | --- |
+| `-h`, `--help` | Show the help message and exit. |
+| `-f`, `--force` | Force adding a bridge, even if one already exists. |
+| `-dr`, `--dry-run` | Don't do anything, just show what would be done. |
+| `-d`, `--debug` | Enable debug mode to show all commands executed. |
+
+### Commands
+
+| Command | Description |
+| --- | --- |
+| `add` | Add a new bridge connection. |
+| `dev` | Show all available network devices. |
+| `conn` | Show all connections. |
+| `showb` | Show all current bridges. |
+| `delete` | Delete a connection. |
+| `activate` | Activate a connection. |
+| `deactivate`| Deactivate a connection. |
+| `interactive`| Start an interactive shell session. |
+
+#### `add` command
+
+The `add` command creates a new bridge connection.
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `-cn`, `--conn-name` | The name for the new bridge connection profile. | `c-mybr0` |
+| `-bn`, `--bridge-ifname` | The name for the bridge network interface. | `mybr0` |
+| `-i`, `--slave-interface` | The existing physical interface to enslave. | Automatic selection |
+| `-ncm`, `--no-clone-mac` | Do not set the bridge MAC address to be the same as the slave interface. | `False` |
+| `--stp` | Enables or disables Spanning Tree Protocol (STP). | `yes` |
+| `-sp`, `--stp-priority` | Sets the STP priority (0-65535). Lower is more preferred. | `None` |
+| `-ms`, `--multicast-snooping` | Enables or disables IGMP/MLD snooping. | `yes` |
+| `--fdelay` | Sets the STP forward delay in seconds (0-30). | `None` |
+| `--vlan-filtering` | Enables or disables VLAN filtering on the bridge. | `no` |
+| `-vdp`, `--vlan-default-pvid` | Sets the default Port VLAN ID (1-4094) for the bridge port itself. | `None` |
+
+### Interactive Mode
+
+The interactive mode provides a shell to run the commands with tab completion.
 
 ```bash
 # virt-bridge-setup.py interactive
@@ -118,24 +130,38 @@ virt-bridge #> add --slave-interface eth0 --stp [TAB]
 no   yes  
 ```
 
+### Examples
+
+**Create a bridge with automatic interface selection:**
+```bash
+# virt-bridge-setup.py add
+```
+
+**Create a bridge with a specific slave interface:**
+```bash
+# virt-bridge-setup.py add -i enp1s0f0
+```
+
+**Create a bridge with a custom name and disable STP:**
+```bash
+# virt-bridge-setup.py add -cn my-custom-bridge -bn br1 --stp no
+```
+
+**Show all bridges:**
+```bash
+# virt-bridge-setup.py showb
+```
+
+**Delete a bridge:**
+```bash
+# virt-bridge-setup.py delete my-custom-bridge
+```
+
 ## Limits
 
 * Tested only on IPv4 network
 * This is a simple script not intended for complex network scenarios (vlan etc...); manual bridge setup is recommended for intricate configurations.
 * The script should be run locally (not remotely) immediately after installation and before any custom network configurations.
-
-## Prerequisites
-
-- Python 3.x
-- Python-dbus
-- NetworkManager installed on the system
-
-## Installation
-
-Clone the repository:
-```bash
-git clone https://github.com/aginies/virt-bridge-setup.git
-```
 
 ## Licence
 
