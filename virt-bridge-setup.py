@@ -37,6 +37,8 @@ DEV_STATES: Dict[int, str] = {
     90: "Secondaries", 100: "Activated", 110: "Deactivating", 120: "Failed",
 }
 
+DEFAULT_BRIDGE_CONN_NAME = 'c-mybr0'
+DEFAULT_BRIDGE_IFNAME = 'mybr0'
 
 class NMManager:
     """
@@ -284,6 +286,7 @@ class NMManager:
         self.delete_connection(slave_conn_name, False, dry_run)
 
         bridge_uuid = str(uuid.uuid4())
+
         bridge_settings = {
             'connection': {
                 'id': dbus.String(bridge_conn_name),
@@ -295,12 +298,6 @@ class NMManager:
             'ipv4': {'method': dbus.String('auto')},
             'ipv6': {'method': dbus.String('auto')},
         }
-        if clone_mac:
-            mac_address = self._get_mac_address(slave_iface)
-            logging.info("MAC address of %s is %s", slave_iface, mac_address)
-            if mac_address:
-                mac_bytes = [int(x, 16) for x in mac_address.split(':')]
-                bridge_settings['bridge']['mac-address'] = dbus.ByteArray(mac_bytes)
 
         if stp:
             bridge_settings['bridge']['stp'] = dbus.Boolean(stp.lower() == 'yes')
@@ -315,6 +312,13 @@ class NMManager:
             bridge_settings['bridge']['multicast-snooping'] = dbus.Boolean(
                                                     multicast_snooping.lower() == 'yes'
                                                     )
+
+        if clone_mac:
+            mac_address = self._get_mac_address(slave_iface)
+            logging.info("MAC address of %s is %s", slave_iface, mac_address)
+            if mac_address:
+                mac_bytes = [int(x, 16) for x in mac_address.split(':')]
+                bridge_settings['bridge']['mac-address'] = dbus.ByteArray(mac_bytes)
 
         if forward_delay is not None:
             if not 0 <= forward_delay <= 30:
@@ -335,7 +339,7 @@ class NMManager:
         logging.debug("Bridge settings %s", bridge_settings)
 
         try:
-            if dry_run is False:
+            if not dry_run:
                 logging.info("Creating bridge profile %s...", bridge_conn_name)
                 bridge_path = self.settings_interface.AddConnection(bridge_settings)
                 logging.info("Successfully added bridge profile. Path: %s", bridge_path)
@@ -361,7 +365,7 @@ class NMManager:
             logging.info("Creating slave profile %s for interface %s...",
                         slave_conn_name, slave_iface
                         )
-            if dry_run is False:
+            if not dry_run:
                 self.settings_interface.AddConnection(slave_settings)
                 logging.info("Successfully enslaved interface %s to bridge.",
                              slave_iface)
@@ -536,7 +540,7 @@ class NMManager:
                 else:
                     logging.info("Deactivating %s ...", name_or_uuid)
                     self.nm_interface.DeactivateConnection(active_conn_path_to_deactivate)
-                logging.info("Successfully deactivated %s.", {name_or_uuid})
+                logging.info("Successfully deactivated %s.", name_or_uuid)
             except dbus.exceptions.DBusException as err:
                 logging.error("Error deactivating connection: %s", err)
         else:
@@ -727,10 +731,10 @@ class InteractiveShell(cmd.Cmd):
         logging.debug("do_add %s", arg_string)
         parser = argparse.ArgumentParser(prog='add', description='Add a new bridge connection.')
         parser.add_argument('--conn-name', dest='conn_name', help=help_data['help_conn_name'],
-                            default='c-mybr0')
+                            default=DEFAULT_BRIDGE_CONN_NAME)
         parser.add_argument('--bridge-ifname', dest='bridge_ifname',
                             help=help_data['help_bridge_ifname'],
-                            default='mybr0')
+                            default=DEFAULT_BRIDGE_IFNAME)
         parser.add_argument('--slave-interface', dest='slave_interface',
                             help=help_data['slave_interface'])
         parser.add_argument('--no-clone-mac', dest='clone_mac', action='store_false',
@@ -901,14 +905,14 @@ def main():
         '--conn-name',
         dest='conn_name',
         required=False,
-        default="c-mybr0",
+        default=DEFAULT_BRIDGE_CONN_NAME,
         help=help_data['help_conn_name'],
     )
     parser_add_bridge.add_argument(
         '-bn',
         '--bridge-ifname',
         dest='bridge_ifname',
-        default="mybr0",
+        default=DEFAULT_BRIDGE_IFNAME,
         required=False,
         help=help_data['help_bridge_ifname'],
     )
