@@ -304,7 +304,7 @@ class NMManager:
                                                     )
 
         if forward_delay is not None:
-            if not 0 <= forward_delay <= 65535:
+            if not 0 <= forward_delay <= 30:
                 logging.error("Error: Forward delay must be between 0 and 30.")
                 sys.exit(1)
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
