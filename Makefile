@@ -18,7 +18,7 @@ clean:
 	rm -rf *~
 
 copy:
-	cp -avf $(NAME).changes $(NAME).spec $(OSCDIR)
+	cp -avf $(NAME).changes $(NAME).spec *.tar.gz $(OSCDIR)
 
 version: 
 	@echo $(VERSION)

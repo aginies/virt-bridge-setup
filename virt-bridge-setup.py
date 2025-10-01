@@ -37,6 +37,8 @@ DEV_STATES: Dict[int, str] = {
     90: "Secondaries", 100: "Activated", 110: "Deactivating", 120: "Failed",
 }
 
+DEFAULT_BRIDGE_CONN_NAME = 'c-mybr0'
+DEFAULT_BRIDGE_IFNAME = 'mybr0'
 
 class NMManager:
     """
@@ -70,6 +72,7 @@ class NMManager:
             logging.error("Error connecting to D-Bus: %s", err)
             logging.error("Please ensure NetworkManager is running.")
             sys.exit(1)
+
     def select_default_slave_interface(self) -> Optional[str]:
         """
         Selects a default slave interface, prioritizing active devices with IP addresses.
@@ -81,21 +84,30 @@ class NMManager:
 
         try:
             devices_paths = self.nm_interface.GetAllDevices()
+            if not devices_paths:
+                logging.warning("No network devices found.")
+                return None
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
-                iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
-                dev_type = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'DeviceType')
+                all_props = prop_interface.GetAll('org.freedesktop.NetworkManager.Device')
 
-                if iface == 'lo' or dev_type == 5 or any(iface.startswith(p) for p in ['virbr', 'vnet', 'docker', 'p2p-dev-']):
+                iface = all_props['Interface']
+                dev_type = all_props['DeviceType']
+
+                if iface == 'lo' or dev_type == 5 or any(
+                        iface.startswith(p) for p in ['virbr', 'vnet', 'docker', 'p2p-dev-']):
                     continue
 
-                ip4_config_path = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Ip4Config')
+                ip4_config_path = all_props['Ip4Config']
                 has_ip = False
                 if ip4_config_path != "/":
-                    ip4_config_proxy = self.bus.get_object('org.freedesktop.NetworkManager', ip4_config_path)
-                    ip4_props_iface = dbus.Interface(ip4_config_proxy, 'org.freedesktop.DBus.Properties')
-                    if ip4_props_iface.GetAll('org.freedesktop.NetworkManager.IP4Config').get('Addresses'):
+                    ip4_config_proxy = self.bus.get_object(
+                            'org.freedesktop.NetworkManager', ip4_config_path)
+                    ip4_props_iface = dbus.Interface(
+                            ip4_config_proxy, 'org.freedesktop.DBus.Properties')
+                    if ip4_props_iface.GetAll(
+                            'org.freedesktop.NetworkManager.IP4Config').get('Addresses'):
                         has_ip = True
 
                 if dev_type == 1:  # Ethernet
@@ -110,7 +122,8 @@ class NMManager:
         for category in ['eth_with_ip', 'wifi_with_ip', 'eth_without_ip', 'wifi_without_ip']:
             if interface_lists[category]:
                 selected_iface = sorted(interface_lists[category])[0]
-                logging.info("Default slave interface selected: %s (%s)", selected_iface, category.replace('_', ' ').title())
+                logging.info("Default slave interface selected: %s (%s)",
+                             selected_iface, category.replace('_', ' ').title())
                 return selected_iface
 
         logging.warning("No suitable default slave interface was found.")
@@ -124,8 +137,10 @@ class NMManager:
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
-                iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
-                dev_type = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'DeviceType')
+                all_props = prop_interface.GetAll('org.freedesktop.NetworkManager.Device')
+
+                iface = all_props['Interface']
+                dev_type = all_props['DeviceType']
 
                 ignored_prefixes = ['lo', 'virbr', 'vnet', 'docker', 'p2p-dev-']
                 if dev_type not in [1, 2] or dev_type == 5 or any(
@@ -262,12 +277,16 @@ class NMManager:
         vlan_default_pvid = config.get('vlan_default_pvid', None)
         dry_run = config.get('dry_run', False)
 
-        slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
+        if not self.check_interface_exist(slave_iface):
+            logging.error("Slave interface %s does not exist", slave_iface)
+            return
 
+        slave_conn_name = f"{bridge_conn_name}-port-{slave_iface}"
         self.delete_connection(bridge_conn_name, False, dry_run)
         self.delete_connection(slave_conn_name, False, dry_run)
 
         bridge_uuid = str(uuid.uuid4())
+
         bridge_settings = {
             'connection': {
                 'id': dbus.String(bridge_conn_name),
@@ -279,12 +298,6 @@ class NMManager:
             'ipv4': {'method': dbus.String('auto')},
             'ipv6': {'method': dbus.String('auto')},
         }
-        if clone_mac:
-            mac_address = self._get_mac_address(slave_iface)
-            logging.info("MAC address of %s is %s", slave_iface, mac_address)
-            if mac_address:
-                mac_bytes = [int(x, 16) for x in mac_address.split(':')]
-                bridge_settings['bridge']['mac-address'] = dbus.ByteArray(mac_bytes)
 
         if stp:
             bridge_settings['bridge']['stp'] = dbus.Boolean(stp.lower() == 'yes')
@@ -300,8 +313,15 @@ class NMManager:
                                                     multicast_snooping.lower() == 'yes'
                                                     )
 
+        if clone_mac:
+            mac_address = self._get_mac_address(slave_iface)
+            logging.info("MAC address of %s is %s", slave_iface, mac_address)
+            if mac_address:
+                mac_bytes = [int(x, 16) for x in mac_address.split(':')]
+                bridge_settings['bridge']['mac-address'] = dbus.ByteArray(mac_bytes)
+
         if forward_delay is not None:
-            if not 0 <= forward_delay <= 65535:
+            if not 0 <= forward_delay <= 30:
                 logging.error("Error: Forward delay must be between 0 and 30.")
                 sys.exit(1)
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
@@ -314,12 +334,12 @@ class NMManager:
             if not 0 <= vlan_default_pvid <= 4094:
                 logging.error("Error: Port VLAN id must be between 0 and 4094.")
                 sys.exit(1)
-            bridge_settings['bridge']['vlan_default_pvid'] = dbus.UInt16(vlan_default_pvid)
+            bridge_settings['bridge']['vlan-default-pvid'] = dbus.UInt16(vlan_default_pvid)
 
         logging.debug("Bridge settings %s", bridge_settings)
 
         try:
-            if dry_run is False:
+            if not dry_run:
                 logging.info("Creating bridge profile %s...", bridge_conn_name)
                 bridge_path = self.settings_interface.AddConnection(bridge_settings)
                 logging.info("Successfully added bridge profile. Path: %s", bridge_path)
@@ -345,7 +365,7 @@ class NMManager:
             logging.info("Creating slave profile %s for interface %s...",
                         slave_conn_name, slave_iface
                         )
-            if dry_run is False:
+            if not dry_run:
                 self.settings_interface.AddConnection(slave_settings)
                 logging.info("Successfully enslaved interface %s to bridge.",
                              slave_iface)
@@ -369,11 +389,8 @@ class NMManager:
             dev_path = self.nm_interface.GetDeviceByIpIface(interface_name)
             dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
             prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
-
-            ip4_config_path = prop_interface.Get(
-                                        'org.freedesktop.NetworkManager.Device',
-                                        'Ip4Config'
-                                        )
+            all_props = prop_interface.GetAll('org.freedesktop.NetworkManager.Device')
+            ip4_config_path = all_props['Ip4Config']
             if ip4_config_path == "/":
                 return None
 
@@ -523,7 +540,7 @@ class NMManager:
                 else:
                     logging.info("Deactivating %s ...", name_or_uuid)
                     self.nm_interface.DeactivateConnection(active_conn_path_to_deactivate)
-                logging.info("Successfully deactivated %s.", {name_or_uuid})
+                logging.info("Successfully deactivated %s.", name_or_uuid)
             except dbus.exceptions.DBusException as err:
                 logging.error("Error deactivating connection: %s", err)
         else:
@@ -625,18 +642,12 @@ class NMManager:
             for dev_path in devices_paths:
                 dev_proxy = self.bus.get_object('org.freedesktop.NetworkManager', dev_path)
                 prop_interface = dbus.Interface(dev_proxy, 'org.freedesktop.DBus.Properties')
-                #all_props = prop_interface.GetAll('org.freedesktop.NetworkManager.Device')
-                #dev_type_num = all_props['DeviceType']
-                iface = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'Interface')
-                autoconnect_bool = prop_interface.Get(
-                                                    'org.freedesktop.NetworkManager.Device',
-                                                    'Autoconnect'
-                                                    )
+                all_props = prop_interface.GetAll('org.freedesktop.NetworkManager.Device')
+
+                iface = all_props['Interface']
+                autoconnect_bool = all_props['Autoconnect']
                 autoconnect_str = "Yes" if autoconnect_bool else "No"
-                dev_type_num = prop_interface.Get(
-                                                'org.freedesktop.NetworkManager.Device',
-                                                'DeviceType'
-                                                )
+                dev_type_num = all_props['DeviceType']
                 # WORKAROUND: Corrects known DeviceType bugs from certain NetworkManager versions.
                 if dev_type_num == 13 and ('br' in iface or 'virbr' in iface):
                     logging.debug(
@@ -650,15 +661,8 @@ class NMManager:
                         iface
                         )
                     dev_type_num = 28
-                dev_state_num = prop_interface.Get('org.freedesktop.NetworkManager.Device', 'State')
-                mac_address = "---"
-                try:
-                    mac_address = prop_interface.Get(
-                                                'org.freedesktop.NetworkManager.Device',
-                                                'HwAddress'
-                                                )
-                except dbus.exceptions.DBusException:
-                    pass
+                dev_state_num = all_props['State']
+                mac_address = all_props.get('HwAddress', '---')
 
                 active_conn_path = prop_interface.Get(
                                                 'org.freedesktop.NetworkManager.Device',
@@ -727,10 +731,10 @@ class InteractiveShell(cmd.Cmd):
         logging.debug("do_add %s", arg_string)
         parser = argparse.ArgumentParser(prog='add', description='Add a new bridge connection.')
         parser.add_argument('--conn-name', dest='conn_name', help=help_data['help_conn_name'],
-                            default='c-mybr0')
+                            default=DEFAULT_BRIDGE_CONN_NAME)
         parser.add_argument('--bridge-ifname', dest='bridge_ifname',
                             help=help_data['help_bridge_ifname'],
-                            default='mybr0')
+                            default=DEFAULT_BRIDGE_IFNAME)
         parser.add_argument('--slave-interface', dest='slave_interface',
                             help=help_data['slave_interface'])
         parser.add_argument('--no-clone-mac', dest='clone_mac', action='store_false',
@@ -901,14 +905,14 @@ def main():
         '--conn-name',
         dest='conn_name',
         required=False,
-        default="c-mybr0",
+        default=DEFAULT_BRIDGE_CONN_NAME,
         help=help_data['help_conn_name'],
     )
     parser_add_bridge.add_argument(
         '-bn',
         '--bridge-ifname',
         dest='bridge_ifname',
-        default="mybr0",
+        default=DEFAULT_BRIDGE_IFNAME,
         required=False,
         help=help_data['help_bridge_ifname'],
     )
