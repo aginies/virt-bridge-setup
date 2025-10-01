@@ -6,7 +6,7 @@ version 2.6:
   * improve check_interface_exist
   * remove run_command, use dbus to check if NM is running
   * various fix around dry-run
-  * fix typo on vlan setting. Improve getting brdige info
+  * fix typo on vlan setting. Improve getting bridge info
   * concatenate do_(activate/deactivate/delete) functions
   * use external function to get ipv4 config and bridge settings
   * various mypy and pylint fixes
