@@ -9,7 +9,7 @@ SBINDIR=$(PREFIX)/sbin
 OSCDIR=/home/aginies/aginies_obs/Virtualization/$(NAME)
 
 PACKAGE=$(NAME)
-FILES=LICENSE Makefile README.md virt-bridge-setup.py
+FILES=LICENSE Makefile README.md ${NAME}.py
 VERSION=$(shell grep -m 1 '^Version:' $(NAME).spec | awk '{print $$2}')
 
 all: 	cleandist clean
@@ -25,7 +25,7 @@ version:
 
 install: 
 	mkdir -p $(DESTDIR)$(SBINDIR)
-	cp -av $(NAME).py $(DESTDIR)$(SBINDIR)/$(NAME)
+	cp -av ${NAME}.py $(DESTDIR)$(SBINDIR)/$(NAME)
 
 cleandist:
 	rm -rf $(PACKAGE)-$(VERSION) $(PACKAGE)-$(VERSION).tar.gz

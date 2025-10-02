@@ -249,8 +249,8 @@ class NMManager:
             print(f"  |  |- IGMP snooping: {b_settings['multicast-snooping']}")
             print(f"  |  |- VLAN Filtering: {b_settings['vlan-filtering']}")
             if b_settings['vlan-filtering'] == "Yes":
-                print(f"  |   - vlan-default-pvid:    {b_settings['vlan-default-pvid']}")
-            print(f"  |   - MAC:    {b_settings['mac-address']}")
+                print(f"  |  |- vlan-default-pvid:    {b_settings['vlan-default-pvid']}")
+            print(f"  |  |- MAC:    {b_settings['mac-address']}")
             ipv4 = bridge['ipv4']
             live_config = self._get_active_network_config(bridge['interface-name'])
             if live_config:
@@ -272,8 +272,8 @@ class NMManager:
         stp_priority = config.get('stp_priority', None)
         clone_mac = config.get('clone_mac', True)
         forward_delay = config.get('forward_delay', None)
-        multicast_snooping = config.get('multicast_snooping', True)
-        vlan_filtering = config.get('vlan_filtering', False)
+        multicast_snooping = config.get('multicast_snooping', 'yes')
+        vlan_filtering = config.get('vlan_filtering', 'no')
         vlan_default_pvid = config.get('vlan_default_pvid', None)
         dry_run = config.get('dry_run', False)
 
