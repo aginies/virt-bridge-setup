@@ -30,6 +30,7 @@ It is especially useful for setting up virtual machines that need to be accessib
 - Create and manage bridge interfaces.
 - Command-line and interactive modes.
 - **Automatic slave interface selection**: If no slave interface is provided, the script will automatically select the best candidate (prioritizing active Ethernet, then active Wi-Fi).
+- **Enhanced Interactive Mode**: A user-friendly interactive shell with wizards for creating, deleting, activating, and deactivating connections, reducing the need to memorize command-line arguments.
 - Tab completion for commands and options in the interactive mode.
 - Support for various bridge options, including STP, VLAN, and more.
 - `--dry-run` mode to see what commands would be executed without making any changes.
@@ -110,20 +111,68 @@ The `add` command creates a new bridge connection.
 
 ### Interactive Mode
 
-The interactive mode provides a shell to run the commands with tab completion.
+The interactive mode provides a powerful shell to manage your bridges with ease. It features command completion and user-friendly wizards for common operations.
 
 ```bash
 # virt-bridge-setup.py interactive
 
 Welcome to the interactive virt-bridge-setup shell.
 Type `help` or `?` to list commands.
+```
 
-_________________________________________
-virt-bridge #> [TAB]
-activate          deactivate        exit              list_connections  show_bridges
-add               delete            help              list_devices
-conn              dev               list_bridges      quit
+#### Wizards for Easy Management
 
+The interactive shell now includes wizards for the `add`, `delete`, `activate`, and `deactivate` commands. If you run these commands without any arguments, you will be guided through the process with interactive prompts.
+
+**Example: The `add` wizard**
+
+Typing `add` will start a step-by-step wizard to create a new bridge:
+
+```
+virt-bridge #> add
+--- Interactive Bridge Creation ---
+Connection name [c-mybr0]:
+Bridge interface name [mybr0]:
+Available slave interfaces:
+  1: enp1s0f0
+  2: wlp2s0
+Select a slave interface (1-2): 1
+Enable STP (yes/no) [yes]:
+Clone MAC address from slave (yes/no) [yes]:
+
+--- Configuration Summary ---
+  Connection Name: c-mybr0
+  Bridge Interface: mybr0
+  Slave Interface: enp1s0f0
+  Clone MAC: Yes
+  STP Enabled: Yes
+
+Proceed with creating the bridge? (yes/no) [yes]:
+```
+
+**Example: The `delete` wizard**
+
+Typing `delete` will list all available connections and prompt you to select one to delete, with a confirmation step to prevent accidents.
+
+```
+virt-bridge #> delete
+--- Interactive Connection Deletion ---
+Available connections:
+   1: c-mybr0                        (bridge)
+   2: c-mybr0-port-enp1s0f0          (802-3-ethernet)
+   3: Wired connection 1             (802-3-ethernet)
+Select a connection to delete (1-3) (or press Enter to cancel): 1
+Are you sure you want to delete 'c-mybr0'? (yes/no) [no]: yes
+```
+
+The `activate` and `deactivate` commands work in a similar way, providing a list of connections to choose from.
+
+#### Command-Line and Tab Completion
+
+For power users, commands still accept command-line arguments, and tab completion is available for all options.
+
+**Listing devices:**
+```
 virt-bridge #> list_devices
 2025-09-24 19:47:05,379 - INFO - Querying for available devices...
 INTERFACE       DEV TYPE     MAC ADDRESS          STATE           CONNECTION         AUTOCONNECT
@@ -134,8 +183,10 @@ wlp2s0          Wi-Fi        E6:5E:XX:XX:XX:XX    Disconnected    ---           
 eth0            Ethernet     C4:EF:XX:XX:XX:XX    Activated       c-mybr0-port-eth0  Yes
 p2p-dev-wlp2s0  Wi-Fi P2P                         Disconnected    ---                Yes
 mybr0           Bridge       C4:EF:XX:XX:XX:XX    Activated       c-mybr0            Yes
-_________________________________________
+```
 
+**Showing bridges:**
+```
 virt-bridge #> show_bridges
 --- Found 1 Bridge(s) ---
   Bridge Profile: c-mybr0
@@ -154,17 +205,17 @@ virt-bridge #> show_bridges
   |  |- Address: 1X.X.X.XX/24
   |  |- Gateway: 1X.X.X.XX
   |   - DNS:     1X.X.X.XX
-_________________________________________
+```
 
+**Tab completion for `add` command:**
+```
 virt-bridge #> add --[TAB]
 --bridge-ifname       --multicast-snooping  --stp                 --vlan-filtering
 --conn-name           --no-clone-mac        --stp-priority
 --fdelay              --slave-interface     --vlan-default-pvid
-_________________________________________
 
 virt-bridge #> add --slave-interface [TAB]
 enp1s0f0  eth0      wlp2s0
-_________________________________________
 
 virt-bridge #> add --slave-interface eth0 --stp [TAB]
 no   yes
