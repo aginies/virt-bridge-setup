@@ -562,9 +562,9 @@ class NMManager:
             logging.info("Connection available are:")
             self.list_connections()
 
-    def _get_connections(self) -> List[Dict[str, Any]]:
+    def get_connections(self) -> List[Dict[str, Any]]:
         """Retrieves details for all saved NetworkManager connections without printing."""
-        logging.debug("_get_connections")
+        logging.debug("get_connections")
         all_connections = []
         connections_paths = self.settings_interface.ListConnections()
         for path in connections_paths:
@@ -590,7 +590,7 @@ class NMManager:
         Retrieves and prints details for all saved NetworkManager connections
         """
         logging.debug("list_connections")
-        all_connections = self._get_connections()
+        all_connections = self.get_connections()
         print(f"{ 'NAME (ID)':<30} { 'TYPE':<18} { 'INTERFACE':<15} { 'UUID'}")
         print("=" * 105)
         for conn in sorted(all_connections, key=lambda c: c['id']):
@@ -612,7 +612,7 @@ class NMManager:
     def get_all_connection_identifiers(self) -> List[str]:
         """Returns a flat list of all connection IDs and UUIDs for completion."""
         identifiers: List[str] = []
-        connections = self._get_connections()
+        connections = self.get_connections()
         for conn in connections:
             identifiers.append(conn['id'])
             identifiers.append(conn['uuid'])
@@ -817,12 +817,88 @@ class InteractiveShell(cmd.Cmd):
         except ImportError:
             pass
 
-    def do_add(self, arg_string: str) -> None:
+    def do_add(self, arg: str) -> None:
         """
-        Adds a new bridge connection with specified options
+        Adds a new bridge connection.
+        Usage: add [options]
+        If no options are provided, an interactive wizard will be launched.
         """
-        logging.debug("do_add %s", arg_string)
-        self.handler.handle_interactive_add(arg_string)
+        if not arg.strip():
+            self._interactive_add()
+        else:
+            self.handler.handle_interactive_add(arg)
+
+    def _interactive_add(self) -> None:
+        """Adds a new bridge connection via an interactive wizard."""
+        print("--- Interactive Bridge Creation ---")
+
+        def get_input(prompt_text, default=None):
+            if default is not None:
+                prompt = f"{prompt_text} [{default}]: "
+            else:
+                prompt = f"{prompt_text}: "
+
+            user_input = input(prompt).strip()
+            return user_input if user_input else default
+
+        conn_name = get_input("Connection name", DEFAULT_BRIDGE_CONN_NAME)
+        bridge_ifname = get_input("Bridge interface name", DEFAULT_BRIDGE_IFNAME)
+
+        slave_candidates = self.manager.get_slave_candidates()
+        if not slave_candidates:
+            print("No suitable slave interfaces found.")
+            return
+
+        print("Available slave interfaces:")
+        for i, candidate in enumerate(slave_candidates):
+            print(f"  {i+1}: {candidate}")
+
+        slave_choice = -1
+        while slave_choice < 0 or slave_choice >= len(slave_candidates):
+            try:
+                choice = get_input(f"Select a slave interface (1-{len(slave_candidates)})")
+                if choice is None:
+                    print("Bridge creation cancelled.")
+                    return
+                slave_choice = int(choice) - 1
+            except (ValueError, TypeError):
+                print("Invalid choice. Please try again.")
+                slave_choice = -1
+
+        slave_interface = slave_candidates[slave_choice]
+
+        stp = get_input("Enable STP (yes/no)", "yes").lower()
+        clone_mac_input = get_input("Clone MAC address from slave (yes/no)", "yes").lower()
+        clone_mac = clone_mac_input == 'yes'
+
+        args = argparse.Namespace(
+            command='add',
+            conn_name=conn_name,
+            bridge_ifname=bridge_ifname,
+            slave_interface=slave_interface,
+            clone_mac=clone_mac,
+            stp=stp,
+            force=True,
+            dry_run=False,
+            forward_delay=None,
+            stp_priority=None,
+            multicast_snooping='yes',
+            vlan_filtering='no',
+            vlan_default_pvid=None
+        )
+
+        print("\n--- Configuration Summary ---")
+        print(f"  Connection Name: {args.conn_name}")
+        print(f"  Bridge Interface: {args.bridge_ifname}")
+        print(f"  Slave Interface: {args.slave_interface}")
+        print(f"  Clone MAC: {'Yes' if args.clone_mac else 'No'}")
+        print(f"  STP Enabled: {args.stp.capitalize()}")
+
+        confirm = get_input("\nProceed with creating the bridge? (yes/no)", "yes").lower()
+        if confirm == 'yes':
+            self.handler.handle_add_bridge(args)
+        else:
+            print("Bridge creation cancelled.")
 
     def complete_add(self, text: str, line: str, begidx: int, _endidx: int) -> List[str]:
         """ Provides context-aware auto-completion for the 'add' command """
@@ -884,34 +960,157 @@ class InteractiveShell(cmd.Cmd):
     def do_delete(self, arg: str) -> None:
         """
         Delete a connection by name or UUID.
-        Usage: delete <name|uuid> [--dry-run]
+        Usage: delete [name|uuid] [--dry-run]
+        If no name or UUID is provided, an interactive selection will be shown.
         """
-        parsed_args = self._parse_name_or_uuid_arg(arg, 'delete')
-        if parsed_args:
-            name_or_uuid, dry_run = parsed_args
-            self.manager.delete_connection(name_or_uuid, True, dry_run)
+        if not arg.strip():
+            self._interactive_delete()
+        else:
+            parsed_args = self._parse_name_or_uuid_arg(arg, 'delete')
+            if parsed_args:
+                name_or_uuid, dry_run = parsed_args
+                self.manager.delete_connection(name_or_uuid, True, dry_run)
+
+    def _interactive_delete(self) -> None:
+        """Guides the user through deleting a connection interactively."""
+        print("--- Interactive Connection Deletion ---")
+        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
+        if not connections:
+            print("No connections found to delete.")
+            return
+
+        print("Available connections:")
+        for i, conn in enumerate(connections):
+            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
+
+        choice = -1
+        while choice < 0 or choice >= len(connections):
+            try:
+                prompt = (f"Select a connection to delete (1-{len(connections)}) "
+                          f"(or press Enter to cancel): ")
+                user_input = input(prompt).strip()
+                if not user_input:
+                    print("Deletion cancelled.")
+                    return
+                choice = int(user_input) - 1
+                if not 0 <= choice < len(connections):
+                    print("Invalid choice. Please try again.")
+                    choice = -1
+            except (ValueError, TypeError):
+                print("Invalid input. Please enter a number.")
+                choice = -1
+
+        selected_conn = connections[choice]
+
+        confirm_prompt = f"Are you sure you want to delete '{selected_conn['id']}'? (yes/no) [no]: "
+        confirm = input(confirm_prompt).strip().lower()
+
+        if confirm == 'yes':
+            self.manager.delete_connection(selected_conn['id'], False, dry_run=False)
+        else:
+            print("Deletion cancelled.")
+
+
 
     def complete_delete(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ complete delete command """
         return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
 
     def do_activate(self, arg: str) -> None:
-        """ Activate a connection by name or UUID. Usage: activate <name|uuid> """
-        parsed_args = self._parse_name_or_uuid_arg(arg, 'activate')
-        if parsed_args:
-            name_or_uuid, dry_run = parsed_args
-            self.manager.activate_connection(name_or_uuid, dry_run)
+        """
+        Activate a connection by name or UUID.
+        Usage: activate [name|uuid] [--dry-run]
+        If no name or UUID is provided, an interactive selection will be shown.
+        """
+        if not arg.strip():
+            self._interactive_activate()
+        else:
+            parsed_args = self._parse_name_or_uuid_arg(arg, 'activate')
+            if parsed_args:
+                name_or_uuid, dry_run = parsed_args
+                self.manager.activate_connection(name_or_uuid, dry_run)
+
+    def _interactive_activate(self) -> None:
+        """Guides the user through activating a connection interactively."""
+        print("--- Interactive Connection Activation ---")
+        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
+        if not connections:
+            print("No connections found to activate.")
+            return
+
+        print("Available connections:")
+        for i, conn in enumerate(connections):
+            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
+
+        choice = -1
+        while choice < 0 or choice >= len(connections):
+            try:
+                prompt = (f"Select a connection to activate (1-{len(connections)}) "
+                          f"(or press Enter to cancel): ")
+                user_input = input(prompt).strip()
+                if not user_input:
+                    print("Activation cancelled.")
+                    return
+                choice = int(user_input) - 1
+                if not 0 <= choice < len(connections):
+                    print("Invalid choice. Please try again.")
+                    choice = -1
+            except (ValueError, TypeError):
+                print("Invalid input. Please enter a number.")
+                choice = -1
+
+        selected_conn = connections[choice]
+        self.manager.activate_connection(selected_conn['id'], dry_run=False)
 
     def complete_activate(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ Complete activation """
         return [i for i in self.manager.get_all_connection_identifiers() if i.startswith(text)]
 
     def do_deactivate(self, arg: str) -> None:
-        """ Deactivate a connection by name or UUID. Usage: activate <name|uuid> """
-        parsed_args = self._parse_name_or_uuid_arg(arg, 'deactivate')
-        if parsed_args:
-            name_or_uuid, dry_run = parsed_args
-            self.manager.deactivate_connection(name_or_uuid, dry_run)
+        """
+        Deactivate a connection by name or UUID.
+        Usage: deactivate [name|uuid] [--dry-run]
+        If no name or UUID is provided, an interactive selection will be shown.
+        """
+        if not arg.strip():
+            self._interactive_deactivate()
+        else:
+            parsed_args = self._parse_name_or_uuid_arg(arg, 'deactivate')
+            if parsed_args:
+                name_or_uuid, dry_run = parsed_args
+                self.manager.deactivate_connection(name_or_uuid, dry_run)
+
+    def _interactive_deactivate(self) -> None:
+        """Guides the user through deactivating a connection interactively."""
+        print("--- Interactive Connection Deactivation ---")
+        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
+        if not connections:
+            print("No connections found to deactivate.")
+            return
+
+        print("Available connections:")
+        for i, conn in enumerate(connections):
+            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
+
+        choice = -1
+        while choice < 0 or choice >= len(connections):
+            try:
+                prompt = (f"Select a connection to deactivate (1-{len(connections)}) "
+                          f"(or press Enter to cancel): ")
+                user_input = input(prompt).strip()
+                if not user_input:
+                    print("Deactivation cancelled.")
+                    return
+                choice = int(user_input) - 1
+                if not 0 <= choice < len(connections):
+                    print("Invalid choice. Please try again.")
+                    choice = -1
+            except (ValueError, TypeError):
+                print("Invalid input. Please enter a number.")
+                choice = -1
+
+        selected_conn = connections[choice]
+        self.manager.deactivate_connection(selected_conn['id'], dry_run=False)
 
     def complete_deactivate(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ Complete deactivation """
