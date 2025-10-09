@@ -512,6 +512,7 @@ class NMManager:
             logging.info("Activation command sent for %s. Check status manually.", name_or_uuid)
         except dbus.exceptions.DBusException as err:
             logging.error("Error activating connection: %s", err)
+            raise
 
     def deactivate_connection(self, name_or_uuid: str, dry_run: bool = False) -> None:
         """ Deactivates a connection """
@@ -746,7 +747,16 @@ class CommandHandler:
         self.manager.add_bridge_connection(vars(args))
         slave_conn_name = f"{args.conn_name}-port-{slave_interface}"
         if not getattr(args, 'dry_run', False):
-            self.manager.activate_connection(slave_conn_name)
+            try:
+                self.manager.activate_connection(slave_conn_name)
+            except dbus.exceptions.DBusException:
+                logging.error(
+                    "Failed to activate the slave connection."
+                    " The connection profile that was just created will be removed"
+                )
+                self.manager.delete_connection(args.conn_name, False)
+                self.manager.delete_connection(slave_conn_name, False)
+                sys.exit(1)
 
     def handle_interactive_add(self, arg_string: str) -> None:
         """
