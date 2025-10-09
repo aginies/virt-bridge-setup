@@ -5,6 +5,9 @@ version 2.9:
   * use VAR for DBUS path
   * create a get all devices function
   * Create CommandHandler class (for interactive and command args)
+  * add interactive wizard for: add, delete, activate, deactivate
+  * rollback if activation of the bridge interface failed
+  * fix some pylint issues
 
 -------------------------------------------------------------------
 Wed Oct  1 11:43:17 UTC 2025 - Antoine Ginies <aginies@suse.com>
