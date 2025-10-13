@@ -266,7 +266,7 @@ class NMManager:
             print(f"  |- IPv4 Config:  ({ipv4['method']})")
             print(f"  |  |- Address: {', '.join(ipv4['addresses']) or '(Not set)'}")
             print(f"  |  |- Gateway: {ipv4['gateway'] or '(Not set)'}")
-            print(f"  |   - DNS:     {', '.join(ipv4['dns']) or '(Not set)'}")
+            print(f"  |  |- DNS:     {', '.join(ipv4['dns']) or '(Not set)'}")
             if i < count - 1:
                 print("")
 
@@ -947,6 +947,37 @@ class InteractiveShell(cmd.Cmd):
         """ Alias for list_bridges """
         return self.do_list_bridges(arg)
 
+    def _select_connection_interactively(self, action_name: str) -> Optional[Dict[str, Any]]:
+        """Helper to interactively select a connection."""
+        print(f"--- Interactive Connection {action_name.capitalize()} ---")
+        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
+        if not connections:
+            print(f"No connections found to {action_name}.")
+            return None
+
+        print("Available connections:")
+        for i, conn in enumerate(connections):
+            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
+
+        choice = -1
+        while choice < 0 or choice >= len(connections):
+            try:
+                prompt = (f"Select a connection to {action_name} (1-{len(connections)}) "
+                          f"(or press Enter to cancel): ")
+                user_input = input(prompt).strip()
+                if not user_input:
+                    print(f"{action_name.capitalize()} cancelled.")
+                    return None
+                choice = int(user_input) - 1
+                if not 0 <= choice < len(connections):
+                    print("Invalid choice. Please try again.")
+                    choice = -1
+            except (ValueError, TypeError):
+                print("Invalid input. Please enter a number.")
+                choice = -1
+
+        return connections[choice]
+
     def _parse_name_or_uuid_arg(self, arg: str, command_name: str) -> Optional[tuple[str, bool]]:
         """Helper to parse a single name/UUID argument and a --dry-run flag."""
         args = arg.split()
@@ -973,34 +1004,9 @@ class InteractiveShell(cmd.Cmd):
 
     def _interactive_delete(self) -> None:
         """Guides the user through deleting a connection interactively."""
-        print("--- Interactive Connection Deletion ---")
-        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
-        if not connections:
-            print("No connections found to delete.")
+        selected_conn = self._select_connection_interactively("delete")
+        if not selected_conn:
             return
-
-        print("Available connections:")
-        for i, conn in enumerate(connections):
-            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
-
-        choice = -1
-        while choice < 0 or choice >= len(connections):
-            try:
-                prompt = (f"Select a connection to delete (1-{len(connections)}) "
-                          f"(or press Enter to cancel): ")
-                user_input = input(prompt).strip()
-                if not user_input:
-                    print("Deletion cancelled.")
-                    return
-                choice = int(user_input) - 1
-                if not 0 <= choice < len(connections):
-                    print("Invalid choice. Please try again.")
-                    choice = -1
-            except (ValueError, TypeError):
-                print("Invalid input. Please enter a number.")
-                choice = -1
-
-        selected_conn = connections[choice]
 
         confirm_prompt = f"Are you sure you want to delete '{selected_conn['id']}'? (yes/no) [no]: "
         confirm = input(confirm_prompt).strip().lower()
@@ -1032,35 +1038,9 @@ class InteractiveShell(cmd.Cmd):
 
     def _interactive_activate(self) -> None:
         """Guides the user through activating a connection interactively."""
-        print("--- Interactive Connection Activation ---")
-        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
-        if not connections:
-            print("No connections found to activate.")
-            return
-
-        print("Available connections:")
-        for i, conn in enumerate(connections):
-            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
-
-        choice = -1
-        while choice < 0 or choice >= len(connections):
-            try:
-                prompt = (f"Select a connection to activate (1-{len(connections)}) "
-                          f"(or press Enter to cancel): ")
-                user_input = input(prompt).strip()
-                if not user_input:
-                    print("Activation cancelled.")
-                    return
-                choice = int(user_input) - 1
-                if not 0 <= choice < len(connections):
-                    print("Invalid choice. Please try again.")
-                    choice = -1
-            except (ValueError, TypeError):
-                print("Invalid input. Please enter a number.")
-                choice = -1
-
-        selected_conn = connections[choice]
-        self.manager.activate_connection(selected_conn['id'], dry_run=False)
+        selected_conn = self._select_connection_interactively("activate")
+        if selected_conn:
+            self.manager.activate_connection(selected_conn['id'], dry_run=False)
 
     def complete_activate(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ Complete activation """
@@ -1082,35 +1062,9 @@ class InteractiveShell(cmd.Cmd):
 
     def _interactive_deactivate(self) -> None:
         """Guides the user through deactivating a connection interactively."""
-        print("--- Interactive Connection Deactivation ---")
-        connections = sorted(self.manager.get_connections(), key=lambda c: c['id'])
-        if not connections:
-            print("No connections found to deactivate.")
-            return
-
-        print("Available connections:")
-        for i, conn in enumerate(connections):
-            print(f"  {i+1:2d}: {conn['id']:<30} ({conn['type']})")
-
-        choice = -1
-        while choice < 0 or choice >= len(connections):
-            try:
-                prompt = (f"Select a connection to deactivate (1-{len(connections)}) "
-                          f"(or press Enter to cancel): ")
-                user_input = input(prompt).strip()
-                if not user_input:
-                    print("Deactivation cancelled.")
-                    return
-                choice = int(user_input) - 1
-                if not 0 <= choice < len(connections):
-                    print("Invalid choice. Please try again.")
-                    choice = -1
-            except (ValueError, TypeError):
-                print("Invalid input. Please enter a number.")
-                choice = -1
-
-        selected_conn = connections[choice]
-        self.manager.deactivate_connection(selected_conn['id'], dry_run=False)
+        selected_conn = self._select_connection_interactively("deactivate")
+        if selected_conn:
+            self.manager.deactivate_connection(selected_conn['id'], dry_run=False)
 
     def complete_deactivate(self, text: str, _line: str, _begidx: str, _endidx: str) -> List[str]:
         """ Complete deactivation """
@@ -1124,7 +1078,6 @@ class InteractiveShell(cmd.Cmd):
     def do_quit(self, arg: str) -> bool:
         """ Alias for exit """
         return self.do_exit(arg)
-
 
 help_data = {
     'help_conn_name': 'The name for the new bridge connection profile (e.g., my-bridge).',
