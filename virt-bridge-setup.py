@@ -249,6 +249,7 @@ class NMManager:
                     print(f"  |  |- {slave['iface']} (Profile: {slave['conn_id']})")
             else:
                 print("  |- Slave:       (None)")
+
             b_settings = bridge['bridge_settings']
             print("  |- Bridge Settings:")
             print(f"  |  |- STP Enabled:   {b_settings['stp']}")
@@ -256,17 +257,22 @@ class NMManager:
             print(f"  |  |- Forward Delay: {b_settings['forward-delay']}")
             print(f"  |  |- IGMP snooping: {b_settings['multicast-snooping']}")
             print(f"  |  |- VLAN Filtering: {b_settings['vlan-filtering']}")
+
             if b_settings['vlan-filtering'] == "Yes":
                 print(f"  |  |- vlan-default-pvid:    {b_settings['vlan-default-pvid']}")
+
             print(f"  |  |- MAC:    {b_settings['mac-address']}")
             ipv4 = bridge['ipv4']
             live_config = self._get_active_network_config(bridge['interface-name'])
+
             if live_config:
                 ipv4.update(live_config)
+
             print(f"  |- IPv4 Config:  ({ipv4['method']})")
             print(f"  |  |- Address: {', '.join(ipv4['addresses']) or '(Not set)'}")
             print(f"  |  |- Gateway: {ipv4['gateway'] or '(Not set)'}")
             print(f"  |  |- DNS:     {', '.join(ipv4['dns']) or '(Not set)'}")
+
             if i < count - 1:
                 print("")
 
@@ -305,12 +311,12 @@ class NMManager:
             if not 0 <= stp_priority <= 65535:
                 logging.error("Error: STP priority must be between 0 and 65535.")
                 sys.exit(1)
+
             bridge_settings['bridge']['priority'] = dbus.UInt16(stp_priority)
 
         if multicast_snooping:
             bridge_settings['bridge']['multicast-snooping'] = dbus.Boolean(
-                                                    multicast_snooping.lower() == 'yes'
-                                                    )
+                multicast_snooping.lower() == 'yes')
 
         if clone_mac:
             mac_address = self._get_mac_address(slave_iface)
@@ -323,6 +329,7 @@ class NMManager:
             if not 0 <= forward_delay <= 30:
                 logging.error("Error: Forward delay must be between 0 and 30.")
                 sys.exit(1)
+
             bridge_settings['bridge']['forward-delay'] = dbus.UInt16(forward_delay)
 
         if vlan_filtering:
@@ -333,6 +340,7 @@ class NMManager:
             if not 0 <= vlan_default_pvid <= 4094:
                 logging.error("Error: Port VLAN id must be between 0 and 4094.")
                 sys.exit(1)
+
             bridge_settings['bridge']['vlan-default-pvid'] = dbus.UInt16(vlan_default_pvid)
 
         return bridge_settings
