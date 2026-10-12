@@ -324,6 +324,12 @@ class NMManager:
             if mac_address:
                 mac_bytes = [int(x, 16) for x in mac_address.split(':')]
                 bridge_settings['bridge']['mac-address'] = dbus.ByteArray(mac_bytes)
+        else:
+            # Without an explicit MAC the kernel bridge inherits the lowest
+            # port MAC, so ask NM for a stable generated one instead.
+            bridge_settings['802-3-ethernet'] = {
+                'cloned-mac-address': dbus.String('stable')
+            }
 
         if forward_delay is not None:
             if not 0 <= forward_delay <= 30:

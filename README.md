@@ -101,7 +101,7 @@ The `add` command creates a new bridge connection.
 | `-cn`, `--conn-name` | The name for the new bridge connection profile. | `c-mybr0` |
 | `-bn`, `--bridge-ifname` | The name for the bridge network interface. | `mybr0` |
 | `-i`, `--slave-interface` | The existing physical interface to enslave. | Automatic selection |
-| `-ncm`, `--no-clone-mac` | Do not set the bridge MAC address to be the same as the slave interface. | `False` |
+| `-ncm`, `--no-clone-mac` | Do not set the bridge MAC address to be the same as the slave interface (a stable MAC is generated instead). | `False` |
 | `--stp` | Enables or disables Spanning Tree Protocol (STP). | `yes` |
 | `-sp`, `--stp-priority` | Sets the STP priority (0-65535). Lower is more preferred. | `None` |
 | `-ms`, `--multicast-snooping` | Enables or disables IGMP/MLD snooping. | `yes` |
