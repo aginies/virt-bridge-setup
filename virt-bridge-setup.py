@@ -328,7 +328,7 @@ class NMManager:
             # Without an explicit MAC the kernel bridge inherits the lowest
             # port MAC, so ask NM for a stable generated one instead.
             bridge_settings['802-3-ethernet'] = {
-                'cloned-mac-address': dbus.String('stable')
+                'assigned-mac-address': dbus.String('stable')
             }
 
         if forward_delay is not None:
